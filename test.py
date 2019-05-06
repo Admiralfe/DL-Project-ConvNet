@@ -16,6 +16,7 @@ def test_graph():
 		print(probs)
 	return
 
+# Suppress tensorflow messages.
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 test_graph()

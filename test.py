@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import rotnet
 import rotation
+import os
 
 
 #Test if the forward pass of the graph works.
@@ -14,5 +15,7 @@ def test_graph():
 		probs, logits = sess.run([probs, logits], feed_dict={x: test_image})
 		print(probs)
 	return
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 test_graph()

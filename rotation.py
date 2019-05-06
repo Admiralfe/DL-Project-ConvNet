@@ -33,12 +33,12 @@ def rotate(image, degrees):
 """
 def load_data():
 	data_path_root = "Datasets/cifar-10-batches-py/"
-	train_batch_1 = np.load(data_path_root + "data_batch_1", encoding="latin1")
-	train_batch_2 = np.load(data_path_root + "data_batch_2", encoding="latin1")
-	train_batch_3 = np.load(data_path_root + "data_batch_3", encoding="latin1")
-	train_batch_4 = np.load(data_path_root + "data_batch_4", encoding="latin1")
-	val_batch = np.load(data_path_root + "data_batch_5", encoding="latin1")
-	test_batch = np.load(data_path_root + "test_batch", encoding="latin1")
+	train_batch_1 = np.load(data_path_root + "data_batch_1", encoding="latin1", allow_pickle=True)
+	train_batch_2 = np.load(data_path_root + "data_batch_2", encoding="latin1", allow_pickle=True)
+	train_batch_3 = np.load(data_path_root + "data_batch_3", encoding="latin1", allow_pickle=True)
+	train_batch_4 = np.load(data_path_root + "data_batch_4", encoding="latin1", allow_pickle=True)
+	val_batch = np.load(data_path_root + "data_batch_5", encoding="latin1", allow_pickle=True)
+	test_batch = np.load(data_path_root + "test_batch", encoding="latin1", allow_pickle=True)
 	
 	
 	train_data = np.concatenate((train_batch_1["data"], train_batch_2["data"], train_batch_3["data"], train_batch_4["data"]))

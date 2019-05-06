@@ -2,6 +2,7 @@ import tensorflow as tf
 import rotation
 
 """ Builds an MLPBlock of a neural network.
+
 	input - image data input to the block
 	conv1_shape - shape of the first convolutional filter in the blcok
 	l2_channels - the number of output channels from the second layer
@@ -31,7 +32,13 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels, pool_size, is_final)
 		L3 = tf.nn.max_pool(L3, ksize=[1, pool_size, pool_size, 1], strides=[1, 2, 2, 1], padding="SAME")
 	return L3
 	
+""" Builds the full rotnet, based on a network in network architecture
 	
+	Returns:
+	x - original input matrix
+	probs - probability matrix for each of the input vectors and each of the classes
+	logits - matrix of unnormalized probabilities
+"""
 def rotnet():
 	_IMAGE_SIZE = 32
 	_IMAGE_CHANNELS = 3

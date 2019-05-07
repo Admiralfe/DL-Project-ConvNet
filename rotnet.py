@@ -42,8 +42,10 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels, pool_size, is_final)
 def rotnet():
 	_IMAGE_SIZE = 32
 	_IMAGE_CHANNELS = 3
+	_NUM_CLASSES = 4
 	
 	x = tf.placeholder(shape=(None, _IMAGE_SIZE, _IMAGE_SIZE, _IMAGE_CHANNELS), dtype=tf.float32)
+	y = tf.placehoder(shape=(None, _NUM_CLASSES))
 	x_batch = tf.reshape(x, shape=(-1, _IMAGE_SIZE, _IMAGE_SIZE, _IMAGE_CHANNELS))
 	
 	with tf.variable_scope("MLP_1"):
@@ -53,9 +55,37 @@ def rotnet():
 		output = MLPBlock(output, conv1_shape=[5, 5, 96, 192], l2_channels=192, out_channels=192, pool_size=3, is_final=False)
 	
 	with tf.variable_scope("MLP_3"):
-		output = MLPBlock(output, conv1_shape=[3, 3, 192, 192], l2_channels=192, out_channels=10, pool_size=8, is_final=True)
+		output = MLPBlock(output, conv1_shape=[3, 3, 192, 192], l2_channels=192, out_channels=_NUM_CLASSES, pool_size=8, is_final=True)
 	
-	logits = tf.reshape(output, (-1, 10))
+	logits = tf.reshape(output, (-1, _NUM_CLASSES))
 	probs = tf.nn.softmax(logits)
 	
-	return x, probs, logits
+	return x, y, probs, logits
+
+def train(train_x, train_y, logits):
+	_BATCH_SIZE = 128
+	#Use a placeholder here to be able to set the learning rate adaptively.
+	learning_rate = tf.placeholder(tf.float32, shape=[])
+	momentum = 0.9
+	weight_decay = 0.0005
+	num_epochs = 10
+	#L2 loss term for weight decay regularization
+	L2 = tf.add_n([tf.nn.l2_loss(var) for var in tf.trainable_variables()])
+	loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(train_y, logits))
+	optimizer = tf.train.MomentumOptimizer(learning_rate, momentum).minimize(loss + L2 * weight_decay)
+	
+	with tf.Session() as sess:
+		for i in range(num_epochs):
+			print("Starting epoch %d", i)
+			curr_lr = 0.1
+			#Define the number of steps in an epoch
+			if (len(train_x) % _BATCH_SIZE == 0):
+				num_iters = len(train_x) / _BATCH_SIZE
+			else:
+				num_iters = int(len(train_x) / _BATCH_SIZE) + 1
+			
+			#Shuffle by permuting indexes and indexing the array. Supposedly this is faster than just using numpy.random.shuffle.
+			train_x = train_x[np.random.permutation(x.shape[0])]
+			for j in range(num_iters):
+				"""Create batches here"""
+				sess.run(optimizer, feed_dict={x : x_batch, y : y_batch, learning_rate : curr_lr})

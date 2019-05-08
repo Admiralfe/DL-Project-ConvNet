@@ -4,7 +4,7 @@ from matplotlib import pyplot as plt
 #TODO: create a function to load all images, rotate them and save on disk.
 """
 Rotates an image 0, 90, 180 or 270 degrees counter-clockwise
-Image needs to be given as a N x N x 3 RGB-matrix.
+Image needs to be given as an N x N x 3 RGB-matrix.
 """
 def rotate(image, degrees):
 	if degrees == 0:
@@ -117,6 +117,7 @@ def load_data():
 	print("Loaded all rotated data!")
 
 	return train_data, train_labels, val_data, val_labels, test_data, test_labels
+
 
 
 """

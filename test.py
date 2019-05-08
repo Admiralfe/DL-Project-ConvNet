@@ -16,7 +16,11 @@ def test_graph():
 		print(probs)
 	return
 
+def test_training():
+	train_data, train_labels, val_data, val_labels, test_data, test_labels = rotation.load_data()
+	x, y, probs, logits = rotnet.rotnet()
+	rotnet.train(train_data, train_labels, logits)
 # Suppress tensorflow messages.
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-test_graph()
+test_training()

@@ -55,10 +55,12 @@ def load_cifar_data():
 		It then saves the new image array to files in np.half for saving space. The label file is ordered in the same way.
 """
 def create_rotated_data():
+	_IMAGE_SIZE = 32
+	_NUM_CHANNELS = 3
 	train_data, train_labels, val_data, val_labels, test_data, test_labels = load_cifar_data()
 
 	# Create all rotations of the training data
-	training_shape = (train_data.shape[0] * 4, train_data.shape[1])
+	training_shape = (train_data.shape[0] * 4, _IMAGE_SIZE, _IMAGE_SIZE, _NUM_CHANNELS)
 
 	training_data_rotated = np.empty(training_shape, np.half)
 	training_labels_rotated = np.empty(training_shape[0], np.int8)
@@ -66,14 +68,14 @@ def create_rotated_data():
 	for i in range(train_data.shape[0]):
 		for j in range(4):
 			reshaped_img = np.reshape(train_data[i], (3, 32, 32)).transpose([1, 2, 0]) / 255
-			training_data_rotated[i * 4 + j] = rotate(reshaped_img, j * 90).transpose([2, 0, 1]).reshape(3072)
+			training_data_rotated[i * 4 + j] = rotate(reshaped_img, j * 90)
 			training_labels_rotated[i * 4 + j] = np.int8(j)
 
 	np.save("training_data_rotated", training_data_rotated)
 	np.save("training_labels_rotated", training_labels_rotated)
 
 	# Create all rotations of the validation data
-	val_shape = (val_data.shape[0] * 4, val_data.shape[1])
+	val_shape = (val_data.shape[0] * 4, _IMAGE_SIZE, _IMAGE_SIZE, _NUM_CHANNELS)
 
 	val_data_rotated = np.empty(val_shape, np.half)
 	val_labels_rotated = np.empty(val_shape[0], np.int8)
@@ -81,14 +83,14 @@ def create_rotated_data():
 	for i in range(val_data.shape[0]):
 		for j in range(4):
 			reshaped_img = np.reshape(val_data[i], (3, 32, 32)).transpose([1, 2, 0]) / 255
-			val_data_rotated[i * 4 + j] = rotate(reshaped_img, j * 90).transpose([2, 0, 1]).reshape(3072)
+			val_data_rotated[i * 4 + j] = rotate(reshaped_img, j * 90)
 			val_labels_rotated[i * 4 + j] = np.int8(j)
 
 	np.save("val_data_rotated", val_data_rotated)
 	np.save("val_labels_rotated", val_labels_rotated)
 
 	# Create all rotations of the test data
-	test_shape = (test_data.shape[0] * 4, test_data.shape[1])
+	test_shape = (test_data.shape[0] * 4, _IMAGE_SIZE, _IMAGE_SIZE, _NUM_CHANNELS)
 
 	test_data_rotated = np.empty(test_shape, np.half)
 	test_labels_rotated = np.empty(test_shape[0], np.int8)
@@ -96,7 +98,7 @@ def create_rotated_data():
 	for i in range(test_data.shape[0]):
 		for j in range(4):
 			reshaped_img = np.reshape(test_data[i], (3, 32, 32)).transpose([1, 2, 0]) / 255
-			test_data_rotated[i * 4 + j] = rotate(reshaped_img, j * 90).transpose([2, 0, 1]).reshape(3072)
+			test_data_rotated[i * 4 + j] = rotate(reshaped_img, j * 90)
 			test_labels_rotated[i * 4 + j] = np.int8(j)
 
 	np.save("test_data_rotated", test_data_rotated)

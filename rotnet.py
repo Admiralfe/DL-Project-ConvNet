@@ -47,6 +47,7 @@ def rotnet():
 	
 	x = tf.placeholder(name="x_input", shape=(None, _IMAGE_SIZE, _IMAGE_SIZE, _IMAGE_CHANNELS), dtype=tf.float16)
 	y = tf.placeholder(name="y_input", shape=(None, _NUM_CLASSES), dtype=tf.float16)
+
 	x_batch = tf.reshape(x, shape=(-1, _IMAGE_SIZE, _IMAGE_SIZE, _IMAGE_CHANNELS))
 	
 	with tf.variable_scope("MLP_1"):

@@ -114,6 +114,8 @@ def load_data():
 	test_data = np.load("test_data_rotated.npy", encoding="latin1", allow_pickle=True)
 	test_labels = np.load("test_labels_rotated.npy", encoding="latin1", allow_pickle=True)
 
+	print("Loaded all rotated data!")
+
 	return train_data, train_labels, val_data, val_labels, test_data, test_labels
 
 

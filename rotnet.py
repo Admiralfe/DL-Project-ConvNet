@@ -108,9 +108,12 @@ def train(train_x, train_y, logits):
 					y_batch = y_onehot[j * _BATCH_SIZE : (j + 1) * _BATCH_SIZE];
 				else:
 					x_batch = train_x[j * _BATCH_SIZE : len(train_x)]
-					y_batch = y_onehot[j * _BATCH_SIZE : y_onehot.shape(0)]
+					y_batch = y_onehot[j * _BATCH_SIZE : y_onehot.shape[0]]
 				
 				sess.run(optimizer, feed_dict={x_input : x_batch, y_input : y_batch, learning_rate : curr_lr})
+		
+		curr_loss = sess.run(loss, feed_dict={x_input : x_batch, y_input: y_batch})
+		print(curr_loss)
 	return
 
 def compute_accuracy(data_batch, labels):

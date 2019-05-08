@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import rotation
+import math
 
 """ Builds an MLPBlock of a neural network.
 
@@ -62,10 +63,12 @@ def rotnet():
 	logits = tf.reshape(output, (-1, _NUM_CLASSES))
 	probs = tf.nn.softmax(logits)
 	
-	return x, y, probs, logits
+	loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(y, logits), name="loss")
+
+	return x, y, loss, probs, logits
 
 def train(train_x, train_y, logits):
-	_BATCH_SIZE = 128
+	_BATCH_SIZE = 4 * 128
 	#Use a placeholder here to be able to set the learning rate adaptively.
 	learning_rate = tf.placeholder(tf.float16, shape=[])
 	momentum = 0.9
@@ -73,9 +76,9 @@ def train(train_x, train_y, logits):
 	num_epochs = 1
 	x_input = tf.get_default_graph().get_tensor_by_name("x_input:0")
 	y_input = tf.get_default_graph().get_tensor_by_name("y_input:0")
+	loss = tf.get_default_graph().get_tensor_by_name("loss:0")
 	#L2 loss term for weight decay regularization
 	L2 = tf.add_n([tf.nn.l2_loss(var) for var in tf.trainable_variables()])
-	loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(train_y, logits))
 	optimizer = tf.train.MomentumOptimizer(learning_rate, momentum).minimize(loss + L2 * weight_decay)
 	
 	#Create the one-hot encoding of the labels.
@@ -90,13 +93,15 @@ def train(train_x, train_y, logits):
 			if (len(train_x) % _BATCH_SIZE == 0):
 				num_iters = int(len(train_x) / _BATCH_SIZE)
 			else:
-				num_iters = int(len(train_x) / _BATCH_SIZE) + 1
+				num_iters = math.ceil(len(train_x) / _BATCH_SIZE)
 			
-			#Shuffle by permuting indexes and indexing the array. Supposedly this is faster than just using numpy.random.shuffle
+			#Shuffle the 4 wide blocks of rotated images by splitting the array into blocks of 4, shuffling the blocks
+			#And reconnecting them.
 			shuffle_blocks = np.split(train_x, 4, axis=0)
 			np.random.shuffle(shuffle_blocks)
 			train_x = np.concatenate(tuple(shuffle_blocks))
 			for j in range(num_iters):
+				print("Starting iteration " + str(j) + " of " + str(num_iters))
 				"""Create batches here"""
 				if (j < num_iters - 1):
 					x_batch = train_x[j * _BATCH_SIZE : (j + 1) * _BATCH_SIZE];
@@ -107,3 +112,35 @@ def train(train_x, train_y, logits):
 				
 				sess.run(optimizer, feed_dict={x_input : x_batch, y_input : y_batch, learning_rate : curr_lr})
 	return
+
+def compute_accuracy(data_batch, labels):
+	_BATCH_SIZE = 100
+	#Get the tensors to feed to the graph
+	x_input = tf.get_default_graph().get_tensor_by_name("x_input:0")
+	probs = tf.get_default_graph().get_tensor_by_name("probs:0")
+	
+	if (len(data_batch) % _BATCH_SIZE) == 0:
+		num_iters = len(data_batch) / _BATCH_SIZE
+	else:
+		num_iters = math.ceil(len(data_batch) / _BATCH_SIZE)
+	
+	probabilities = np.empty(shape=(len(data_batch), 4), dtype=np.float16)
+	with tf.Session() as sess:
+		sess.run(tf.global_variables_initializer())
+		"""Split the run into multiple chunks to conserve memory"""
+		for i in range(num_iters):
+			if i < num_iters - 1:
+				batch = data_batch[i * _BATCH_SIZE : (i + 1) * _BATCH_SIZE]
+				probabilities[i * _BATCH_SIZE : (i + 1) * _BATCH_SIZE] = sess.run(probs, feed_dict={x_input : batch})
+			else:
+				batch = data_batch[i * _BATCH_SIZE : len(data_batch)]
+				probabilities[i * _BATCH_SIZE : len(data_batch)] = sess.run(probs, feed_dict={x_input : batch})
+
+	
+	guesses = np.argmax(probs, axis=1)
+	correct_guesses = 0
+	for i in range(guesses.shape[0]):
+		if guesses[i] == labels[i]:
+			correct_guesses += 1
+	
+	return correct_guesses / guesses.shape[0]

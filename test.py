@@ -20,8 +20,17 @@ def test_graph():
 
 def test_training():
 	train_data, train_labels, val_data, val_labels, test_data, test_labels = rotation.load_data()
-	x, y, probs, logits = rotnet.rotnet()
+	train_onehot = np.eye(4)[train_labels]
+	x, y, loss, probs, logits = rotnet.rotnet()
+	with tf.Session() as sess:
+		sess.run(tf.global_variables_initializer())
+		curr_loss = sess.run(loss, feed_dict={x : train_data[0:100], y : train_onehot[0:100]})
+		print(curr_loss)
 	rotnet.train(train_data, train_labels, logits)
+	with tf.Session() as sess:
+		sess.run(tf.global_variables_initializer())
+		curr_loss = sess.run(loss, feed_dict={x : train_data[0:100], y : train_onehot[0:100]})
+		print(curr_loss)
 # Suppress tensorflow messages.
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 

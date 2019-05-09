@@ -74,7 +74,7 @@ def create_rotated_data():
 
 	for i in range(train_data.shape[0]):
 		for j in range(4):
-			reshaped_img = np.reshape(train_data[i], (3, 32, 32)).transpose([1, 2, 0]) / 255
+			reshaped_img = np.reshape(train_data[i], (3, 32, 32)).transpose([1, 2, 0]) / 255.0
 			training_data_rotated[i * 4 + j] = rotate(reshaped_img, j * 90)
 			training_labels_rotated[i * 4 + j] = np.int8(j)
 
@@ -89,7 +89,7 @@ def create_rotated_data():
 
 	for i in range(val_data.shape[0]):
 		for j in range(4):
-			reshaped_img = np.reshape(val_data[i], (3, 32, 32)).transpose([1, 2, 0]) / 255
+			reshaped_img = np.reshape(val_data[i], (3, 32, 32)).transpose([1, 2, 0]) / 255.0
 			val_data_rotated[i * 4 + j] = rotate(reshaped_img, j * 90)
 			val_labels_rotated[i * 4 + j] = np.int8(j)
 
@@ -104,7 +104,7 @@ def create_rotated_data():
 
 	for i in range(test_data.shape[0]):
 		for j in range(4):
-			reshaped_img = np.reshape(test_data[i], (3, 32, 32)).transpose([1, 2, 0]) / 255
+			reshaped_img = np.reshape(test_data[i], (3, 32, 32)).transpose([1, 2, 0]) / 255.0
 			test_data_rotated[i * 4 + j] = rotate(reshaped_img, j * 90)
 			test_labels_rotated[i * 4 + j] = np.int8(j)
 
@@ -152,6 +152,44 @@ def make_tf_dataset(images_shape, labels_shape):
 	tf.add_to_collection("iterator_inputs", labels_input)	
 	
 	return tf.data.Dataset.from_tensor_slices((images_input, labels_input))
+
+def data_pipeline(dataset, num_epochs=None, batch_size=None):
+	""" Makes a data pipeline for a certain number of epochs for training the model.
+		!!!The iterator returned needs to be initialized manually with the input data!!!
+		
+		Args:
+			dataset - dataset to create iterator over
+			num_epochs (optional) - number of epochs to create iterator for,
+									if not specified then use FLAGS.num_epochs
+			batch_size (optional) - size of batches in iterator,
+									if not specified then use FLAGS.batch_size
+		Returns:
+			images - batch of images
+			labels - batch of labels
+			init_op - initializer for the iterator
+			
+	"""
+	bs = FLAGS.batch_size if batch_size is None else batch_size
+	epochs = FLAGS.num_epochs if num_epochs is None else num_epochs
+	
+	#Shuffles the data in blocks of 4 so that 
+	#rotated versions of the same image stay next to each other in the data set
+	print("Shuffling and repeating dataset...")
+	dataset = dataset.batch(4).shuffle(buffer_size=1000).repeat(epochs)
+	
+	#Undo the batching used to keep rotated images together
+	dataset = dataset.apply(tf.data.experimental.unbatch())
+	
+	#Re-batch the data into the training batch size.
+	print("Re-batching dataset...")
+	dataset = dataset.batch(bs)
+	
+	iterator = dataset.make_initializable_iterator()
+	images, labels = iterator.get_next()
+	init_op = iterator.initializer
+	
+	return images, labels, init_op
+	
 
 def make_epoch_iterator(dataset, batch_size=None):
 	""" Shuffles the images in blocks of 4 before the epoch and reuturns

@@ -41,5 +41,22 @@ def test_training():
 # Suppress tensorflow messages.
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+def make_graph_visualization():
+	global_step = tf.train.get_or_create_global_step()
 
-test_training()
+	training_images, training_labels = rotation.load_training_data()
+
+	dataset = rotation.make_tf_dataset(images_shape=training_images.shape, labels_shape=training_labels.shape)
+	images, labels, iterator_initializer = rotation.data_pipeline(dataset)
+	
+	logits = rotnet.rotnet(images)
+	loss = rotnet.loss(logits, labels)
+	
+	train_op = rotnet.train_op(loss, global_step)
+	
+	with tf.Session() as sess:
+		writer = tf.summary.FileWriter("tmp/1")
+		writer.add_graph(sess.graph)
+	return
+
+#test_training()

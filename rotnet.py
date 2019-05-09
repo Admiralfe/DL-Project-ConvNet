@@ -8,10 +8,12 @@ FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_integer("batch_size", 4 * 128,
 							"""Batch size to use for training""")
+							
+tf.app.flags.DEFINE_integer("num_epochs", 100,
+							"""Number of training epochs to run""")
 
 tf.app.flags.DEFINE_boolean("use_fp16", True,
 							"""Use 16 bit floating point""")
-
 
 
 """Global constants"""
@@ -49,80 +51,113 @@ def _create_variable(name, shape, stddev, wd):
 	return var
 
 
-def MLPBlock(input, conv1_shape, l2_channels, out_channels, pool_size, is_final):
+def MLPBlock(input, conv1_shape, l2_channels, out_channels):
 	""" Builds an MLPBlock of a neural network.
 	Args:
 		input - image data input to the block
 		conv1_shape - shape of the first convolutional filter in the blcok
 		l2_channels - the number of output channels from the second layer
 		out_channels - the number of output channels from the entire block
-		max_pool_size - size of the maxpooling window.
 	returns:
 		Output from the MLPBlock.
 	"""
 
-	W1 = _create_variable("W1", shape=conv1_shape, stddev=0.01, wd=WEIGHT_DECAY)
-	b1 = tf.get_variable("b1", shape=[conv1_shape[3]], initializer=tf.constant_initializer(0), dtype=tf.float16)
-	L1 = tf.nn.conv2d(input, W1, strides=[1, 1, 1, 1], padding='SAME') + b1
+	W1 = _create_variable("W1", 
+						  shape=conv1_shape, 
+						  stddev=math.sqrt(2 / (conv1_shape[0] * conv1_shape[1] * conv1_shape[3])), 
+						  wd=WEIGHT_DECAY)
+	#b1 = tf.get_variable("b1", shape=[conv1_shape[3]], initializer=tf.constant_initializer(0), dtype=tf.float16)
+	L1 = tf.nn.conv2d(input, W1, strides=[1, 1, 1, 1], padding='SAME')
+	L1 = tf.layers.batch_normalization(L1, momentum=0.9, epsilon=0.00001)
 	L1 = tf.nn.relu(L1)
+	tf.summary.histogram("block_1", L1)
 		
 	#The number of input channels here is the same as the number of output channels previously, conv1_dim[3].
-	W2 = _create_variable("W2", shape=[1, 1, conv1_shape[3], l2_channels], stddev=0.01, wd=WEIGHT_DECAY)
-	b2 = tf.get_variable("b2", [l2_channels], initializer=tf.constant_initializer(0), dtype=tf.float16)
-	L2 = tf.nn.conv2d(L1, W2, strides=[1, 1, 1, 1], padding='SAME') + b2
+	W2 = _create_variable("W2", 
+						  shape=[1, 1, conv1_shape[3], l2_channels], 
+						  stddev=math.sqrt(2 / l2_channels), 
+						  wd=WEIGHT_DECAY)
+	#b2 = tf.get_variable("b2", [l2_channels], initializer=tf.constant_initializer(0), dtype=tf.float16)
+	L2 = tf.nn.conv2d(L1, W2, strides=[1, 1, 1, 1], padding='SAME')
+	L2 = tf.layers.batch_normalization(L2, momentum=0.9, epsilon=0.00001)
 	L2 = tf.nn.relu(L2)
+	tf.summary.histogram("block_2", L1)
 
-	W3 = _create_variable("W3", [1, 1, l2_channels, out_channels], stddev=0.01, wd=WEIGHT_DECAY)
-	b3 = tf.get_variable("b3", [out_channels], initializer=tf.constant_initializer(0), dtype=tf.float16)
-	L3 = tf.nn.conv2d(L2, W3, strides=[1, 1, 1, 1], padding='SAME') + b3
+	W3 = _create_variable("W3", 
+						  [1, 1, l2_channels, out_channels], 
+						  stddev=math.sqrt(2 / out_channels), 
+						  wd=WEIGHT_DECAY)
+	#b3 = tf.get_variable("b3", [out_channels], initializer=tf.constant_initializer(0), dtype=tf.float16)
+	L3 = tf.nn.conv2d(L2, W3, strides=[1, 1, 1, 1], padding='SAME')
+	L2 = tf.layers.batch_normalization(L2, momentum=0.9, epsilon=0.00001)
 	L3 = tf.nn.relu(L3)
-	
+	tf.summary.histogram("block_3", L1)
+	"""
 	if is_final:
 		L3 = tf.nn.avg_pool(L3, ksize=[1, pool_size, pool_size, 1], strides=[1, 1, 1, 1], padding="VALID")
 	else:
 		L3 = tf.nn.max_pool(L3, ksize=[1, pool_size, pool_size, 1], strides=[1, 2, 2, 1], padding="SAME")
+	"""
 	return L3
 	
 
-def rotnet():
+def rotnet(x_batch):
 	""" Builds the full rotnet, based on a network in network architecture
-		
+		Args:
+			x_batch - input batch of images
 		Returns:
-		logits - matrix of unnormalized probabilities
+			logits - matrix of unnormalized probabilities
 	"""
-	x = tf.placeholder(name="x_input", shape=(None, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS), dtype=tf.float16)
-	tf.add_to_collection("inputs", x)
-
-	x_batch = tf.reshape(x, shape=(-1, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS))
+	
+	#x = tf.placeholder(name="x_input", shape=(None, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS), dtype=tf.float16)
+	#tf.add_to_collection("inputs", x)
+	#x_batch = tf.reshape(x, shape=(-1, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS))
 	
 	with tf.variable_scope("MLP_1"):
-		output = MLPBlock(x_batch, conv1_shape=[5, 5, 3, 192], l2_channels=160, out_channels=96, pool_size=3, is_final=False)
-		tf.summary.histogram('mlp', output)
+		output = MLPBlock(x_batch, conv1_shape=[5, 5, 3, 192], l2_channels=160, out_channels=96)
+		output = tf.nn.max_pool(output, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding="SAME")
+		tf.summary.histogram("pool_out", output)
 	
 	with tf.variable_scope("MLP_2"):
-		output = MLPBlock(output, conv1_shape=[5, 5, 96, 192], l2_channels=192, out_channels=192, pool_size=3, is_final=False)
-		tf.summary.histogram('mlp', output)
+		output = MLPBlock(output, conv1_shape=[5, 5, 96, 192], l2_channels=192, out_channels=192)
+		output = tf.nn.avg_pool(output, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding="SAME")
 	
 	with tf.variable_scope("MLP_3"):
-		output = MLPBlock(output, conv1_shape=[3, 3, 192, 192], l2_channels=192, out_channels=NUM_CLASSES, pool_size=8, is_final=True)
-		tf.summary.histogram('mlp', output)
-	
-	logits = tf.reshape(output, (-1, NUM_CLASSES))
+		output = MLPBlock(output, conv1_shape=[3, 3, 192, 192], l2_channels=192, out_channels=192)
+		output = tf.nn.avg_pool(output, 
+								ksize=[1,output.shape[1], output.shape[2], 1], 
+								strides=[1, output.shape[1], output.shape[2], 1],
+								padding="VALID")
+		tf.summary.histogram("pool_out", output)
+	flattened = tf.reshape(output, (-1, 192))
+	W = _create_variable("W", 
+						 shape=[192, NUM_CLASSES],
+						 stddev=math.sqrt(1 / NUM_CLASSES),
+						 wd=WEIGHT_DECAY)
+	b = tf.get_variable("b",
+						shape=[NUM_CLASSES],
+						initializer=tf.constant_initializer(0),
+						dtype=tf.float16)
+	logits = tf.nn.xw_plus_b(flattened, W, b)
+	tf.summary.histogram("linear_layer", logits)
+					
+	#logits = tf.reshape(output, (-1, NUM_CLASSES))
 
 	return logits
 	
-def loss(logits):
+def loss(logits, labels):
 	"""
 		Add L2 loss for all the trainable variables.
 		Adds a summary for the loss.
 		
 		Args:
-			logits : logits from rotnet()
+			logits - logits from rotnet()
+			labels - labels for the batch used to compute logits.
 		
 		Returns:
 			tf tensor with the scalar loss value.
 	"""
-	labels = tf.placeholder(name="y_input", shape=(NUM_CLASSES), dtype=tf.uint8)
+	#labels = tf.placeholder(name="y_input", shape=(NUM_CLASSES), dtype=tf.uint8)
 	tf.add_to_collection("inputs", labels)
 
 	labels = tf.cast(labels, tf.int32)

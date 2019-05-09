@@ -101,12 +101,15 @@ def rotnet():
 	
 	with tf.variable_scope("MLP_1"):
 		output = MLPBlock(x_batch, conv1_shape=[5, 5, 3, 192], l2_channels=160, out_channels=96, pool_size=3, is_final=False)
+		tf.summary.histogram('mlp', output)
 	
 	with tf.variable_scope("MLP_2"):
 		output = MLPBlock(output, conv1_shape=[5, 5, 96, 192], l2_channels=192, out_channels=192, pool_size=3, is_final=False)
+		tf.summary.histogram('mlp', output)
 	
 	with tf.variable_scope("MLP_3"):
 		output = MLPBlock(output, conv1_shape=[3, 3, 192, 192], l2_channels=192, out_channels=_NUM_CLASSES, pool_size=8, is_final=True)
+		tf.summary.histogram('mlp', output)
 	
 	logits = tf.reshape(output, (-1, _NUM_CLASSES))
 

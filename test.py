@@ -24,12 +24,18 @@ def test_graph():
 def test_training():
 	train_data, train_labels, val_data, val_labels, test_data, test_labels = rotation.load_data()
 	train_onehot = np.eye(4)[train_labels]
-	x, y, loss, probs, logits = rotnet.rotnet()
+	logits = rotnet.rotnet()
+	inputs_collection = tf.get_collection("inputs")
+	x = inputs_collection[0]
+	y = inputs_collection[1]
+	loss = rotnet.loss(logits, train_labels)
 	with tf.Session() as sess:
 		now =  datetime.strftime(datetime.now(), "%y%m%d_%H%M%S")
 		file_writer = tf.summary.FileWriter('logs/train/' + now, sess.graph)
+		merged = tf.summary.merge_all()
 		sess.run(tf.global_variables_initializer())
-		curr_loss = sess.run(loss, feed_dict={x : train_data[0:100], y : train_onehot[0:100]})
+		curr_loss = sess.run([loss, merged], feed_dict={x : train_data[0:100], y : train_onehot[0:100]})
+		file_writer.add_summary(merged)
 		print(curr_loss)
 	rotnet.train(train_data, train_labels, logits)
 # Suppress tensorflow messages.

@@ -3,10 +3,10 @@ import numpy as np
 import rotation
 import math
 
-"""Project wide flags""""
+"""Project wide flags"""
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_integer("batch_size", 4 * 128
+tf.app.flags.DEFINE_integer("batch_size", 4 * 128,
 							"""Batch size to use for training""")
 
 tf.app.flags.DEFINE_boolean("use_fp16", True,
@@ -43,7 +43,7 @@ def _create_variable(name, shape, stddev, wd):
 	var = tf.get_variable(
 		name, 
 		shape, 
-		initializer=tf.random_normal_initializer(stddev, dtype=tf.float16));
+		initializer=tf.random_normal_initializer(stddev), dtype=tf.float16)
 	weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name="weight_loss")
 	tf.add_to_collection("losses", weight_decay)
 	return var
@@ -62,7 +62,7 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels, pool_size, is_final)
 	"""
 
 	W1 = _create_variable("W1", shape=conv1_shape, stddev=0.01, wd=WEIGHT_DECAY)
-	b1 = tf.get_variable("b1", shape=[conv1_shape[3]], initializer=tf.constant_intializer(0, dtype=tf.float16))
+	b1 = tf.get_variable("b1", shape=[conv1_shape[3]], initializer=tf.constant_initializer(0), dtype=tf.float16)
 	L1 = tf.nn.conv2d(input, W1, strides=[1, 1, 1, 1], padding='SAME') + b1
 	L1 = tf.nn.relu(L1)
 		
@@ -108,14 +108,14 @@ def rotnet():
 		tf.summary.histogram('mlp', output)
 	
 	with tf.variable_scope("MLP_3"):
-		output = MLPBlock(output, conv1_shape=[3, 3, 192, 192], l2_channels=192, out_channels=_NUM_CLASSES, pool_size=8, is_final=True)
+		output = MLPBlock(output, conv1_shape=[3, 3, 192, 192], l2_channels=192, out_channels=NUM_CLASSES, pool_size=8, is_final=True)
 		tf.summary.histogram('mlp', output)
 	
-	logits = tf.reshape(output, (-1, _NUM_CLASSES))
+	logits = tf.reshape(output, (-1, NUM_CLASSES))
 
 	return logits
 	
-def loss():
+def loss(logits, labels):
 	"""
 		Add L2 loss for all the trainable variables.
 		Adds a summary for the loss.
@@ -126,10 +126,10 @@ def loss():
 	"""
 	labels = tf.cast(labels, tf.int32)
 	sample_cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
-		labels=labels, logits=logits, name="cross_entropy_per_sample)
-	cross_entropy = tf.reduce_mean(cross_entropy, name="cross_entropy")
+		labels=labels, logits=logits, name="cross_entropy_per_sample")
+	cross_entropy = tf.reduce_mean(sample_cross_entropy, name="cross_entropy")
 	
-	tf.add_to_collection("losses", cross_entropy_mean)
+	tf.add_to_collection("losses", cross_entropy)
 	
 	#The total loss is the cross entropy loss plus 
 	#the weight decay losses from the variables
@@ -143,13 +143,13 @@ def train_op(total_loss, global_step):
 	"""
 	loss_avg = tf.train.ExponentialMovingAverage(0.9)
 	loss_avg_op = loss_avg.apply(total_loss)
-	tf.summary.scalar(name="total_loss", loss_averages.average(total_loss))
+	tf.summary.scalar("total_loss", loss_avg.average(total_loss))
 	
 	#TODO: implement the correct dropping of learning rates.
 	batches_per_epoch = NUM_TRAINING_SAMPLES / FLAGS.batch_size
 	decay_steps = math.ceil(batches_per_epoch * EPOCHS_PER_DECAY)
 	lr = tf.train.exponential_decay(
-			INTIIAL_LR,
+			INITIAL_LR,
 			global_step,
 			decay_steps,
 			DECAY_RATE,
@@ -185,9 +185,9 @@ def train(train_x, train_y, logits):
 			curr_lr = 0.1
 			#Define the number of steps in an epoch
 			if (len(train_x) % _BATCH_SIZE == 0):
-				num_iters = int(len(train_x) / BATCH_SIZE)
+				num_iters = int(len(train_x) / _BATCH_SIZE)
 			else:
-				num_iters = math.ceil(len(train_x) / BATCH_SIZE)
+				num_iters = math.ceil(len(train_x) / _BATCH_SIZE)
 			
 			#Shuffle the 4 wide blocks of rotated images by splitting the array into blocks of 4, shuffling the blocks
 			#And reconnecting them.
@@ -198,11 +198,11 @@ def train(train_x, train_y, logits):
 				print("Starting iteration " + str(j) + " of " + str(num_iters))
 				"""Create batches here"""
 				if (j < num_iters - 1):
-					x_batch = train_x[j * BATCH_SIZE : (j + 1) * BATCH_SIZE];
-					y_batch = y_onehot[j * BATCH_SIZE : (j + 1) * BATCH_SIZE];
+					x_batch = train_x[j * _BATCH_SIZE : (j + 1) * _BATCH_SIZE]
+					y_batch = y_onehot[j * _BATCH_SIZE : (j + 1) * _BATCH_SIZE]
 				else:
-					x_batch = train_x[j * BATCH_SIZE : len(train_x)]
-					y_batch = y_onehot[j * BATCH_SIZE : y_onehot.shape[0]]
+					x_batch = train_x[j * _BATCH_SIZE : len(train_x)]
+					y_batch = y_onehot[j * _BATCH_SIZE : y_onehot.shape[0]]
 				
 				sess.run(optimizer, feed_dict={x_input : x_batch, y_input : y_batch, learning_rate : curr_lr})
 		
@@ -227,8 +227,8 @@ def compute_accuracy(data_batch, labels):
 		"""Split the run into multiple chunks to conserve memory"""
 		for i in range(num_iters):
 			if i < num_iters - 1:
-				batch = data_batch[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
-				probabilities[i * BATCH_SIZE : (i + 1) * BATCH_SIZE] = sess.run(probs, feed_dict={x_input : batch})
+				batch = data_batch[i * _BATCH_SIZE : (i + 1) * _BATCH_SIZE]
+				probabilities[i * _BATCH_SIZE : (i + 1) * _BATCH_SIZE] = sess.run(probs, feed_dict={x_input : batch})
 			else:
 				batch = data_batch[i * _BATCH_SIZE : len(data_batch)]
 				probabilities[i * _BATCH_SIZE : len(data_batch)] = sess.run(probs, feed_dict={x_input : batch})

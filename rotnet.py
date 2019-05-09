@@ -3,7 +3,7 @@ import numpy as np
 import rotation
 import math
 
-"""Project wide flags""""
+"""Project wide flags"""
 FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_integer("batch_size", 4 * 128

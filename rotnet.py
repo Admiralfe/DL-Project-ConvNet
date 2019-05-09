@@ -3,15 +3,30 @@ import numpy as np
 import rotation
 import math
 
+"""Project wide flags""""
+FLAGS = tf.app.flags.FLAGS
+
+tf.app.flags.DEFINE_integer("batch_size", 4 * 128
+							"""Batch size to use for training""")
+
+tf.app.flags.DEFINE_boolean("use_fp16", True,
+							"""Use 16 bit floating point""")
+
+
+
 """Global constants"""
 #Image set constants
 IMAGE_SIZE = 32
 IMAGE_CHANNELS = 3
 NUM_CLASSES = 4
+NUM_TRAINING_SAMPLES = 160000
 
 #Training constants
-BATCH_SIZE = 4 * 128
 WEIGHT_DECAY = 0.0005
+EPOCHS_PER_DECAY = 30
+INITIAL_LR = 0.1
+DECAY_RATE = 0.2
+MOMENTUM = 0.9
 
 def _create_variable(name, shape, stddev, wd):
 	"""Helper function to create variables with weight_decay
@@ -128,7 +143,20 @@ def train_op(total_loss, global_step):
 	tf.summary.scalar(name="total_loss", loss_averages.average(total_loss))
 	
 	#TODO: implement the correct dropping of learning rates.
+	batches_per_epoch = NUM_TRAINING_SAMPLES / FLAGS.batch_size
+	decay_steps = math.ceil(batches_per_epoch * EPOCHS_PER_DECAY)
+	lr = tf.train.exponential_decay(
+			INTIIAL_LR,
+			global_step,
+			decay_steps,
+			DECAY_RATE,
+			staircase=True)
 	
+	with tf.control_dependencies([loss_avg_op]):
+		grad_opt = tf.train.MomentumOptimizer(lr, MOMENTUM)
+	
+	#POTENTIAL TODO: add more summaries for gradients etc.
+	return grad_opt
 
 def train(train_x, train_y, logits):
 	_BATCH_SIZE = 4 * 128

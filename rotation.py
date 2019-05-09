@@ -1,5 +1,12 @@
 import numpy as np
+import tensorflow as tf
 from matplotlib import pyplot as plt
+
+FLAGS = tf.app.flags.FLAGS
+
+#Global constants
+IMAGE_SIZE = 32;
+IMAGE_CHANNELS = 3;
 
 #TODO: create a function to load all images, rotate them and save on disk.
 """
@@ -103,23 +110,75 @@ def create_rotated_data():
 
 	np.save("test_data_rotated", test_data_rotated)
 	np.save("test_labels_rotated", test_labels_rotated)
-
-def load_data():
+	
+def load_training_data():
 	train_data = np.load("training_data_rotated.npy", encoding="latin1", allow_pickle=True)
 	train_labels = np.load("training_labels_rotated.npy", encoding="latin1", allow_pickle=True)
+	
+	tf.app.flags.DEFINE_integer("num_training_samples", len(train_labels),
+								"""Number of samples in the training set""")
 
+	return train_data, train_labels
+
+def load_validation_data():
 	val_data = np.load("val_data_rotated.npy", encoding="latin1", allow_pickle=True)
 	val_labels = np.load("val_labels_rotated.npy", encoding="latin1", allow_pickle=True)
+	
+	return val_data, val_labels
 
+def load_test_data():
 	test_data = np.load("test_data_rotated.npy", encoding="latin1", allow_pickle=True)
 	test_labels = np.load("test_labels_rotated.npy", encoding="latin1", allow_pickle=True)
+	
+	return test_data, test_labels
 
-	print("Loaded all rotated data!")
+def make_tf_dataset(images_shape, labels_shape):
+	""" Builds a tf dataset using placeholders for the input data
+		
+		Adds the placeholders to a collection called iterator_inputs for access later
+		
+		Args:
+			image_shape - shape of the input images
+			labels_shape - shape of the input labels
+		
+		Returns:
+			A tf.data.Dataset with placeholders for the dataset.
+	"""
+	dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
+	images_input = tf.placeholder(dtype=dtype, shape=images_shape)
+	labels_input = tf.placeholder(dtype=tf.uint8, shape=labels_shape)
+	
+	tf.add_to_collection("iterator_inputs", images_input)
+	tf.add_to_collection("iterator_inputs", labels_input)	
+	
+	return tf.data.Dataset.from_tensor_slices((images_input, labels_input))
 
-	return train_data, train_labels, val_data, val_labels, test_data, test_labels
-
-
-
+def make_epoch_iterator(dataset, batch_size=None):
+	""" Shuffles the images in blocks of 4 before the epoch and reuturns
+		an iterator over the dataset with batch size as in batch_size,
+		or FLAGS.batch_size if batch_size is None.
+		
+		The iterator needs to be initialized before use!
+		
+		Args:
+			dataset - dataset to create iterator for
+			batch_size = size of batches in iterator
+		Returns:
+			Uninitialized tf iterator over the dataset
+	"""
+	bs = FLAGS.batch_size if batch_size is None else batch_size	
+	#Unbatch the dataset if it is currently batched.
+	#Check this by checking if the images have 4 dimensions
+	if (dataset.output_shapes[0].rank == 4):
+		dataset.apply(tf.data.experimental.unbatch())
+	dataset = dataset.batch(4)
+	dataset = dataset.shuffle(buffer_size=1000)
+	dataset.apply(tf.data.experimental.unbatch())
+	dataset = dataset.batch(bs)
+	
+	iterator = dataset.make_initializable_iterator()
+	return iterator
+	
 """
 	Test code for this file
 """

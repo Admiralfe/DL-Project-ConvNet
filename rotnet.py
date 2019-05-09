@@ -88,14 +88,10 @@ def rotnet():
 	""" Builds the full rotnet, based on a network in network architecture
 		
 		Returns:
-		x - original input matrix
-		probs - probability matrix for each of the input vectors and each of the classes
 		logits - matrix of unnormalized probabilities
 	"""
 	x = tf.placeholder(name="x_input", shape=(None, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS), dtype=tf.float16)
-	y = tf.placeholder(name="y_input", shape=(None, NUM_CLASSES), dtype=tf.float16)
 	tf.add_to_collection("inputs", x)
-	tf.add_to_collection("inputs", y)
 
 	x_batch = tf.reshape(x, shape=(-1, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNELS))
 	
@@ -115,15 +111,20 @@ def rotnet():
 
 	return logits
 	
-def loss(logits, labels):
+def loss(logits):
 	"""
 		Add L2 loss for all the trainable variables.
 		Adds a summary for the loss.
 		
 		Args:
 			logits : logits from rotnet()
-			labels : labels of shape [batch_size]
+		
+		Returns:
+			tf tensor with the scalar loss value.
 	"""
+	labels = tf.placeholder(name="y_input", shape=(NUM_CLASSES), dtype=tf.uint8)
+	tf.add_to_collection("inputs", labels)
+
 	labels = tf.cast(labels, tf.int32)
 	sample_cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
 		labels=labels, logits=logits, name="cross_entropy_per_sample")
@@ -142,7 +143,7 @@ def train_op(total_loss, global_step):
 		variables. Compute moving averages of total loss and add to summary.
 	"""
 	loss_avg = tf.train.ExponentialMovingAverage(0.9)
-	loss_avg_op = loss_avg.apply(total_loss)
+	loss_avg_op = loss_avg.apply([total_loss])
 	tf.summary.scalar("total_loss", loss_avg.average(total_loss))
 	
 	#TODO: implement the correct dropping of learning rates.
@@ -156,7 +157,7 @@ def train_op(total_loss, global_step):
 			staircase=True)
 	
 	with tf.control_dependencies([loss_avg_op]):
-		grad_opt = tf.train.MomentumOptimizer(lr, MOMENTUM)
+		grad_opt = tf.train.MomentumOptimizer(lr, MOMENTUM).minimize(total_loss, global_step=global_step)
 	
 	#POTENTIAL TODO: add more summaries for gradients etc.
 	return grad_opt

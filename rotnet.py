@@ -81,7 +81,7 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels):
 	L2 = tf.nn.conv2d(L1, W2, strides=[1, 1, 1, 1], padding='SAME')
 	L2 = tf.layers.batch_normalization(L2, momentum=0.9, epsilon=0.00001)
 	L2 = tf.nn.relu(L2)
-	tf.summary.histogram("block_2", L1)
+	tf.summary.histogram("block_2", L2)
 
 	W3 = _create_variable("W3", 
 						  [1, 1, l2_channels, out_channels], 
@@ -89,9 +89,9 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels):
 						  wd=WEIGHT_DECAY)
 	#b3 = tf.get_variable("b3", [out_channels], initializer=tf.constant_initializer(0), dtype=tf.float16)
 	L3 = tf.nn.conv2d(L2, W3, strides=[1, 1, 1, 1], padding='SAME')
-	L2 = tf.layers.batch_normalization(L2, momentum=0.9, epsilon=0.00001)
+	L3 = tf.layers.batch_normalization(L3, momentum=0.9, epsilon=0.00001)
 	L3 = tf.nn.relu(L3)
-	tf.summary.histogram("block_3", L1)
+	tf.summary.histogram("block_3", L3)
 	"""
 	if is_final:
 		L3 = tf.nn.avg_pool(L3, ksize=[1, pool_size, pool_size, 1], strides=[1, 1, 1, 1], padding="VALID")
@@ -129,17 +129,19 @@ def rotnet(x_batch):
 								strides=[1, output.shape[1], output.shape[2], 1],
 								padding="VALID")
 		tf.summary.histogram("pool_out", output)
-	flattened = tf.reshape(output, (-1, 192))
-	W = _create_variable("W", 
-						 shape=[192, NUM_CLASSES],
-						 stddev=math.sqrt(1 / NUM_CLASSES),
-						 wd=WEIGHT_DECAY)
-	b = tf.get_variable("b",
-						shape=[NUM_CLASSES],
-						initializer=tf.constant_initializer(0),
-						dtype=tf.float16)
-	logits = tf.nn.xw_plus_b(flattened, W, b)
-	tf.summary.histogram("linear_layer", logits)
+		
+	with tf.variable_scope("Linear_layer"):
+		flattened = tf.reshape(output, (-1, 192))
+		W = _create_variable("W", 
+							 shape=[192, NUM_CLASSES],
+							 stddev=math.sqrt(1 / NUM_CLASSES),
+							 wd=WEIGHT_DECAY)
+		b = tf.get_variable("b",
+							shape=[NUM_CLASSES],
+							initializer=tf.constant_initializer(0),
+							dtype=tf.float16)
+		logits = tf.nn.xw_plus_b(flattened, W, b)
+		tf.summary.histogram("linear_layer", logits)
 					
 	#logits = tf.reshape(output, (-1, NUM_CLASSES))
 

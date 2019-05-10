@@ -22,7 +22,7 @@ def train():
 		num_training_samples = len(training_labels)
 		iters_per_epoch = math.ceil(num_training_samples / FLAGS.batch_size)
 		
-		dataset = rotation.make_tf_dataset(images_shape=training_images.shape, labels_shape=training_labels.shape)
+		dataset = rotation.make_tf_dataset(num_training_samples)
 		"""
 		def map_fun(img, label):
 			return tf.cast(tf.image.per_image_standardization(img), tf.float16), label
@@ -33,7 +33,7 @@ def train():
 		logits = rotnet.rotnet(images)
 		loss = rotnet.loss(logits, labels)
 		
-		summary_writer = tf.summary.FileWriter("tmp/2")
+		summary_writer = tf.summary.FileWriter("tmp/4")
 		
 		"""Test code pls ignore
 		n = tf.data.Dataset.range(8).batch(4).shuffle(buffer_size=20).repeat(5)
@@ -54,7 +54,7 @@ def train():
 			sess.run(iterator_initializer, 
 					 feed_dict={iter_input_images : training_images, 
 								iter_input_labels : training_labels})
-								
+			summary_writer.add_graph(sess.graph)
 			for i in range(NUM_EPOCHS):
 				print("Starting epoch ", i)
 				for j in range(iters_per_epoch):

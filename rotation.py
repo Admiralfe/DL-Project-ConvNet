@@ -132,7 +132,7 @@ def load_test_data():
 	
 	return test_data, test_labels
 
-def make_tf_dataset(images_shape, labels_shape):
+def make_tf_dataset(dataset_size):
 	""" Builds a tf dataset using placeholders for the input data
 		
 		Adds the placeholders to a collection called iterator_inputs for access later
@@ -145,8 +145,8 @@ def make_tf_dataset(images_shape, labels_shape):
 			A tf.data.Dataset with placeholders for the dataset.
 	"""
 	dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
-	images_input = tf.placeholder(dtype=dtype, shape=images_shape)
-	labels_input = tf.placeholder(dtype=tf.uint8, shape=labels_shape)
+	images_input = tf.placeholder(dtype=dtype, shape=[dataset_size, IMAGE_SIZE, IMAGE_SIZE, 3])
+	labels_input = tf.placeholder(dtype=tf.uint8, shape=[dataset_size])
 	
 	tf.add_to_collection("iterator_inputs", images_input)
 	tf.add_to_collection("iterator_inputs", labels_input)	
@@ -171,6 +171,8 @@ def data_pipeline(dataset, num_epochs=None, batch_size=None):
 	"""
 	bs = FLAGS.batch_size if batch_size is None else batch_size
 	epochs = FLAGS.num_epochs if num_epochs is None else num_epochs
+	print(bs)
+	print(epochs)
 	
 	#Shuffles the data in blocks of 4 so that 
 	#rotated versions of the same image stay next to each other in the data set
@@ -211,7 +213,7 @@ def make_epoch_iterator(dataset, batch_size=None):
 		dataset.apply(tf.data.experimental.unbatch())
 	dataset = dataset.batch(4)
 	dataset = dataset.shuffle(buffer_size=1000)
-	dataset.apply(tf.data.experimental.unbatch())
+	dataset = dataset.apply(tf.data.experimental.unbatch())
 	dataset = dataset.batch(bs)
 	
 	iterator = dataset.make_initializable_iterator()

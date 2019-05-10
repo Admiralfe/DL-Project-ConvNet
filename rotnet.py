@@ -8,9 +8,6 @@ FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_integer("batch_size", 4 * 128,
 							"""Batch size to use for training""")
-							
-tf.app.flags.DEFINE_integer("num_epochs", 100,
-							"""Number of training epochs to run""")
 
 tf.app.flags.DEFINE_boolean("use_fp16", True,
 							"""Use 16 bit floating point""")
@@ -43,9 +40,10 @@ def _create_variable(name, shape, stddev, wd):
 		Variable tensor
 	"""
 	var = tf.get_variable(
-		name, 
+		name,
 		shape, 
-		initializer=tf.random_normal_initializer(stddev), dtype=tf.float16)
+		initializer=tf.random_normal_initializer(0, tf.cast(stddev, tf.float16), dtype=tf.float16),
+		dtype=tf.float16)
 	weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name="weight_loss")
 	tf.add_to_collection("losses", weight_decay)
 	return var
@@ -64,8 +62,9 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels):
 
 	W1 = _create_variable("W1", 
 						  shape=conv1_shape, 
-						  stddev=math.sqrt(2 / (conv1_shape[0] * conv1_shape[1] * conv1_shape[3])), 
+						  stddev=tf.constant(math.sqrt(2.0 / (conv1_shape[0] * conv1_shape[1] * conv1_shape[3]))), 
 						  wd=WEIGHT_DECAY)
+	tf.summary.histogram("Weight_1", W1)
 	#b1 = tf.get_variable("b1", shape=[conv1_shape[3]], initializer=tf.constant_initializer(0), dtype=tf.float16)
 	L1 = tf.nn.conv2d(input, W1, strides=[1, 1, 1, 1], padding='SAME')
 	L1 = tf.layers.batch_normalization(L1, momentum=0.9, epsilon=0.00001)
@@ -75,7 +74,7 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels):
 	#The number of input channels here is the same as the number of output channels previously, conv1_dim[3].
 	W2 = _create_variable("W2", 
 						  shape=[1, 1, conv1_shape[3], l2_channels], 
-						  stddev=math.sqrt(2 / l2_channels), 
+						  stddev=tf.constant(math.sqrt(2 / l2_channels)), 
 						  wd=WEIGHT_DECAY)
 	#b2 = tf.get_variable("b2", [l2_channels], initializer=tf.constant_initializer(0), dtype=tf.float16)
 	L2 = tf.nn.conv2d(L1, W2, strides=[1, 1, 1, 1], padding='SAME')
@@ -85,7 +84,7 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels):
 
 	W3 = _create_variable("W3", 
 						  [1, 1, l2_channels, out_channels], 
-						  stddev=math.sqrt(2 / out_channels), 
+						  stddev=tf.constant(math.sqrt(2 / out_channels)), 
 						  wd=WEIGHT_DECAY)
 	#b3 = tf.get_variable("b3", [out_channels], initializer=tf.constant_initializer(0), dtype=tf.float16)
 	L3 = tf.nn.conv2d(L2, W3, strides=[1, 1, 1, 1], padding='SAME')
@@ -132,10 +131,11 @@ def rotnet(x_batch):
 		
 	with tf.variable_scope("Linear_layer"):
 		flattened = tf.reshape(output, (-1, 192))
-		W = _create_variable("W", 
+		W = tf.get_variable("W", 
 							 shape=[192, NUM_CLASSES],
-							 stddev=math.sqrt(1 / NUM_CLASSES),
-							 wd=WEIGHT_DECAY)
+							 initializer=tf.random_uniform_initializer(-0.5, 0.5),
+							 dtype=tf.float16)
+		tf.summary.histogram("W", W)
 		b = tf.get_variable("b",
 							shape=[NUM_CLASSES],
 							initializer=tf.constant_initializer(0),
@@ -179,10 +179,10 @@ def train_op(total_loss, global_step):
 		Apply one step of momentum gradient descent to all trainable
 		variables. Compute moving averages of total loss and add to summary.
 	"""
-	loss_avg = tf.train.ExponentialMovingAverage(0.9)
-	loss_avg_op = loss_avg.apply([total_loss])
-	tf.summary.scalar("total_loss", loss_avg.average(total_loss))
-	
+	#loss_avg = tf.train.ExponentialMovingAverage(0.9)
+	#loss_avg_op = loss_avg.apply([total_loss])
+	#tf.summary.scalar("total_loss", loss_avg.average(total_loss))
+	tf.summary.scalar("total_loss", total_loss)
 	#TODO: implement the correct dropping of learning rates.
 	batches_per_epoch = NUM_TRAINING_SAMPLES / FLAGS.batch_size
 	decay_steps = math.ceil(batches_per_epoch * EPOCHS_PER_DECAY)
@@ -193,8 +193,8 @@ def train_op(total_loss, global_step):
 			DECAY_RATE,
 			staircase=True)
 	
-	with tf.control_dependencies([loss_avg_op]):
-		grad_opt = tf.train.MomentumOptimizer(lr, MOMENTUM).minimize(total_loss, global_step=global_step)
+	#with tf.control_dependencies([loss_avg_op]):
+	grad_opt = tf.train.MomentumOptimizer(lr, MOMENTUM).minimize(total_loss, global_step=global_step)
 	
 	#POTENTIAL TODO: add more summaries for gradients etc.
 	return grad_opt

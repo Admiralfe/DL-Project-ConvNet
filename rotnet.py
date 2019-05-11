@@ -169,6 +169,10 @@ def loss(logits, labels):
 	
 	tf.add_to_collection("losses", cross_entropy)
 	
+	correct_predictions = tf.equal(tf.cast(tf.argmax(logits, 1), tf.int32), labels)
+	accuracy = tf.reduce_mean(tf.cast(correct_predictions, tf.float32), name="accuracy")
+	tf.summary.scalar("Training accuracy", accuracy)
+	
 	#The total loss is the cross entropy loss plus 
 	#the weight decay losses from the variables
 	return tf.add_n(tf.get_collection("losses"), name="total_loss")
@@ -178,11 +182,15 @@ def train_op(total_loss, global_step):
 	
 		Apply one step of momentum gradient descent to all trainable
 		variables. Compute moving averages of total loss and add to summary.
+		
+		Args:
+			total_loss - loss returned by loss()
+			global_step - global_step in the training
 	"""
-	#loss_avg = tf.train.ExponentialMovingAverage(0.9)
-	#loss_avg_op = loss_avg.apply([total_loss])
-	#tf.summary.scalar("total_loss", loss_avg.average(total_loss))
-	tf.summary.scalar("total_loss", total_loss)
+	loss_avg = tf.train.ExponentialMovingAverage(0.9)
+	loss_avg_op = loss_avg.apply([total_loss])
+	tf.summary.scalar("total_loss", loss_avg.average(total_loss))
+	
 	#TODO: implement the correct dropping of learning rates.
 	batches_per_epoch = NUM_TRAINING_SAMPLES / FLAGS.batch_size
 	decay_steps = math.ceil(batches_per_epoch * EPOCHS_PER_DECAY)

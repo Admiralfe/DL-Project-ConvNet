@@ -44,13 +44,14 @@ def load_cifar_data():
 	train_batch_2 = np.load(data_path_root + "data_batch_2", encoding="latin1", allow_pickle=True)
 	train_batch_3 = np.load(data_path_root + "data_batch_3", encoding="latin1", allow_pickle=True)
 	train_batch_4 = np.load(data_path_root + "data_batch_4", encoding="latin1", allow_pickle=True)
-	val_batch = np.load(data_path_root + "data_batch_5", encoding="latin1", allow_pickle=True)
+	train_batch_5 = np.load(data_path_root + "data_batch_5", encoding="latin1", allow_pickle=True)
 	test_batch = np.load(data_path_root + "test_batch", encoding="latin1", allow_pickle=True)
 	
-	train_data = np.concatenate((train_batch_1["data"], train_batch_2["data"], train_batch_3["data"], train_batch_4["data"]))
-	train_labels = np.concatenate((train_batch_1["labels"], train_batch_2["labels"], train_batch_3["labels"], train_batch_4["labels"]))
-	val_data = val_batch["data"]
-	val_labels = val_batch["labels"]
+	#Use the first 45000 samples for training and leave 5000 for validation
+	train_data = np.concatenate((train_batch_1["data"], train_batch_2["data"], train_batch_3["data"], train_batch_4["data"], train_batch_5["data"][0:5000]))
+	train_labels = np.concatenate((train_batch_1["labels"], train_batch_2["labels"], train_batch_3["labels"], train_batch_4["labels"], train_batch_5["labels"][0:5000]))
+	val_data = train_batch_5["data"][5000:]
+	val_labels = train_batch_5["labels"][5000:]
 	
 	test_data = test_batch["data"]
 	test_labels = test_batch["labels"]
@@ -132,7 +133,7 @@ def load_test_data():
 	
 	return test_data, test_labels
 
-def make_tf_dataset(dataset_size):
+def make_tf_dataset(image_shape, labels_shape):
 	""" Builds a tf dataset using placeholders for the input data
 		
 		Adds the placeholders to a collection called iterator_inputs for access later
@@ -145,8 +146,8 @@ def make_tf_dataset(dataset_size):
 			A tf.data.Dataset with placeholders for the dataset.
 	"""
 	dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
-	images_input = tf.placeholder(dtype=dtype, shape=[dataset_size, IMAGE_SIZE, IMAGE_SIZE, 3])
-	labels_input = tf.placeholder(dtype=tf.uint8, shape=[dataset_size])
+	images_input = tf.placeholder(dtype=dtype, shape=image_shape)
+	labels_input = tf.placeholder(dtype=tf.uint8, shape=labels_shape)
 	
 	tf.add_to_collection("iterator_inputs", images_input)
 	tf.add_to_collection("iterator_inputs", labels_input)	
@@ -164,9 +165,7 @@ def data_pipeline(dataset, batch_size=None):
 			batch_size (optional) - size of batches in iterator,
 									if not specified then use FLAGS.batch_size
 		Returns:
-			images - batch of images
-			labels - batch of labels
-			init_op - initializer for the iterator
+			Uninitialized iterator
 			
 	"""
 	bs = FLAGS.batch_size if batch_size is None else batch_size
@@ -183,12 +182,10 @@ def data_pipeline(dataset, batch_size=None):
 	#Re-batch the data into the training batch size.
 	print("Re-batching dataset...")
 	dataset = dataset.batch(bs)
+	dataset = dataset.prefetch(1)
 	
 	iterator = dataset.make_initializable_iterator()
-	images, labels = iterator.get_next()
-	init_op = iterator.initializer
-	
-	return images, labels, init_op
+	return iterator
 	
 
 def make_epoch_iterator(dataset, batch_size=None):
@@ -220,7 +217,8 @@ def make_epoch_iterator(dataset, batch_size=None):
 """
 	Test code for this file
 """
-create_rotated_data()
+if __name__ == "__main__":
+	create_rotated_data()
 
 """
 

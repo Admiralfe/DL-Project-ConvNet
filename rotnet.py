@@ -21,8 +21,8 @@ NUM_CLASSES = 4
 NUM_TRAINING_SAMPLES = 160000
 
 #Training constants
-WEIGHT_DECAY = 0.000
-EPOCHS_PER_DECAY = 30
+WEIGHT_DECAY = 0.00005
+DECAY_STEPS = 9000
 INITIAL_LR = 0.1
 DECAY_RATE = 0.2
 MOMENTUM = 0.9
@@ -46,7 +46,7 @@ def _create_variable(name, shape, stddev, wd):
         shape, 
         initializer=tf.random_normal_initializer(0, tf.cast(stddev, dtype), dtype=dtype),
         dtype=dtype)
-    weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name="weight_loss")
+    weight_decay = tf.multiply(tf.nn.l2_loss(var), 2 *  wd, name="weight_loss")
     tf.add_to_collection("losses", weight_decay)
     return var
 
@@ -144,11 +144,15 @@ def rotnet(x_batch):
                                                                        tf.cast(tf.constant(math.sqrt(1 / 192)), dtype)),
                              dtype=dtype)
         tf.summary.histogram("W", W)
+        weight_decay_W = tf.multiply(tf.nn.l2_loss(W), 2 *  WEIGHT_DECAY, name="weight_loss")
+        tf.add_to_collection("losses", weight_decay_W)
         b = tf.get_variable("b",
                             shape=[NUM_CLASSES],
                             initializer=tf.constant_initializer(0),
                             dtype=dtype)
         tf.summary.histogram("b", b)
+        weight_decay_b = tf.multiply(tf.nn.l2_loss(b), 2 *  WEIGHT_DECAY, name="weight_loss")
+        tf.add_to_collection("losses", weight_decay_b)
         logits = tf.nn.xw_plus_b(flattened, W, b)
         tf.summary.histogram("linear_layer", logits)
 
@@ -197,13 +201,13 @@ def train_op(total_loss, global_step):
     
     #TODO: implement the correct dropping of learning rates.
     batches_per_epoch = NUM_TRAINING_SAMPLES / FLAGS.batch_size
-    decay_steps = math.ceil(batches_per_epoch * EPOCHS_PER_DECAY)
     lr = tf.train.exponential_decay(
             INITIAL_LR,
             global_step,
-            decay_steps,
+            DECAY_STEPS,
             DECAY_RATE,
             staircase=True)
+    tf.summary.scalar("Learning rate", lr)
     
     with tf.control_dependencies([loss_avg_op]):
         grad_opt = tf.train.MomentumOptimizer(lr, MOMENTUM, use_nesterov=NESTEROV).minimize(total_loss, global_step=global_step)

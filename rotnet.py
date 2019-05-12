@@ -1,12 +1,12 @@
 import tensorflow as tf
 import numpy as np
-import rotation
+import data
 import math
 
 """Project wide flags"""
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_integer("batch_size", 4 * 128,
+tf.app.flags.DEFINE_integer("batch_size", 128,
                             """Batch size to use for training""")
 
 tf.app.flags.DEFINE_boolean("use_fp16", True,
@@ -61,14 +61,17 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels):
     returns:
         Output from the MLPBlock.
     """
-
+    
+    #Placeholder flag for whether the model is currently used for inference or training.
+    #This is needed to perform batch normalization correctly.
+    training_flag = tf.get_default_graph().get_tensor_by_name("training_flag:0")
     W1 = _create_variable("W1", 
                           shape=conv1_shape, 
                           stddev=tf.constant(math.sqrt(2.0 / (conv1_shape[0] * conv1_shape[1] * conv1_shape[3]))), 
                           wd=WEIGHT_DECAY)
     tf.summary.histogram("Weight_1", W1)
     L1 = tf.nn.conv2d(input, W1, strides=[1, 1, 1, 1], padding='SAME')
-    L1 = tf.layers.batch_normalization(L1, momentum=0.9, epsilon=0.00001)
+    L1 = tf.layers.batch_normalization(L1, momentum=0.9, epsilon=0.00001, training=training_flag)
     L1 = tf.nn.relu(L1)
     tf.summary.histogram("block_1", L1)
         
@@ -78,7 +81,7 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels):
                           stddev=tf.constant(math.sqrt(2 / l2_channels)), 
                           wd=WEIGHT_DECAY)
     L2 = tf.nn.conv2d(L1, W2, strides=[1, 1, 1, 1], padding='SAME')
-    L2 = tf.layers.batch_normalization(L2, momentum=0.9, epsilon=0.00001)
+    L2 = tf.layers.batch_normalization(L2, momentum=0.9, epsilon=0.00001, training=training_flag)
     L2 = tf.nn.relu(L2)
     tf.summary.histogram("block_2", L2)
 
@@ -87,7 +90,7 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels):
                           stddev=tf.constant(math.sqrt(2 / out_channels)), 
                           wd=WEIGHT_DECAY)
     L3 = tf.nn.conv2d(L2, W3, strides=[1, 1, 1, 1], padding='SAME')
-    L3 = tf.layers.batch_normalization(L3, momentum=0.9, epsilon=0.00001)
+    L3 = tf.layers.batch_normalization(L3, momentum=0.9, epsilon=0.00001, training=training_flag)
     L3 = tf.nn.relu(L3)
     tf.summary.histogram("block_3", L3)
     """
@@ -108,6 +111,11 @@ def rotnet(x_batch):
     """
     
     dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
+    
+    tf.summary.image("images", x_batch, 4)
+    #Flag for whether the model is currently used for training or inference
+    #This is needed to perform the batch normalization correctly.
+    training = tf.placeholder(tf.bool, name="training_flag")
     
     with tf.variable_scope("MLP_1"):
         output = MLPBlock(x_batch, conv1_shape=[5, 5, 3, 192], l2_channels=160, out_channels=96)
@@ -130,13 +138,15 @@ def rotnet(x_batch):
         flattened = tf.reshape(output, (-1, 192))
         W = tf.get_variable("W", 
                              shape=[192, NUM_CLASSES],
-                             initializer=tf.random_uniform_initializer(-0.5, 0.5),
+                             initializer=tf.random_uniform_initializer(tf.cast(tf.constant(-1 * math.sqrt(1 / 192)), dtype), 
+                                                                       tf.cast(tf.constant(math.sqrt(1 / 192)), dtype)),
                              dtype=dtype)
         tf.summary.histogram("W", W)
         b = tf.get_variable("b",
                             shape=[NUM_CLASSES],
                             initializer=tf.constant_initializer(0),
                             dtype=dtype)
+        tf.summary.histogram("b", b)
         logits = tf.nn.xw_plus_b(flattened, W, b)
         tf.summary.histogram("linear_layer", logits)
 
@@ -154,8 +164,6 @@ def loss(logits, labels):
         Returns:
             tf tensor with the scalar loss value.
     """
-    #labels = tf.placeholder(name="y_input", shape=(NUM_CLASSES), dtype=tf.uint8)
-    tf.add_to_collection("inputs", labels)
 
     labels = tf.cast(labels, tf.int32)
     sample_cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -163,10 +171,9 @@ def loss(logits, labels):
     cross_entropy = tf.reduce_mean(sample_cross_entropy, name="cross_entropy")
     
     tf.add_to_collection("losses", cross_entropy)
-    
     correct_predictions = tf.equal(tf.cast(tf.argmax(logits, 1), tf.int32), labels)
     accuracy = tf.reduce_mean(tf.cast(correct_predictions, tf.float32), name="accuracy")
-    #tf.summary.scalar("Training accuracy", accuracy)
+    tf.summary.scalar("Training accuracy", accuracy)
     
     #The total loss is the cross entropy loss plus 
     #the weight decay losses from the variables

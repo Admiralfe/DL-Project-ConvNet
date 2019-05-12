@@ -1,4 +1,5 @@
 import math
+import random
 
 import tensorflow as tf
 import numpy as np
@@ -77,19 +78,45 @@ def train():
         training_images, training_labels = data.load_cifar_training_data()
         validation_images, validation_labels = data.load_cifar_validation_data()
         
-        training_dataset = data.make_tf_dataset(training_images.shape, training_labels.shape)
+        """
+        def add_random(x):
+            random.seed()
+            print(type(x))
+            return x + random.randint(1,100)
         
+        with tf.Session() as sess:
+            
+            summary_writer = tf.summary.FileWriter("tmp/7")
+            test = tf.data.Dataset.from_tensor_slices((validation_images, validation_labels))
+            test = pre_process_data(test)
+            test = test.map(data.create_rotated_images_with_labels, num_parallel_calls=4)
+            test = test.repeat(2)
+            
+            iter = test.make_one_shot_iterator()
+            image, label = iter.get_next()
+            for i in range(10000):
+                print(i)
+                if (i % 5000 == 1):
+                    s = sess.run(tf.summary.image("image", image, 4))
+                    summary_writer.add_summary(s)
+                else:
+                    sess.run(image)
+        exit()
+        """
+        training_dataset = data.make_tf_dataset(training_images.shape, training_labels.shape)
+
         #Normalize and apply random crop and horizontal flips to the images.
         training_dataset = pre_process_data(training_dataset)
         
-        training_dataset = training_dataset.shuffle(buffer_size=1000).prefetch(1)
+        training_dataset = training_dataset.shuffle(buffer_size=1000)
+        training_dataset = training_dataset.prefetch(1)
+        training_dataset = training_dataset.repeat()
         #Create the rotated data
         training_dataset = training_dataset.map(data.create_rotated_images_with_labels, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         #Undo the batching of data done to create the rotated versions of the images
         training_dataset = training_dataset.flat_map(lambda x, y: tf.data.Dataset.from_tensor_slices((x, y)))
-        training_dataset = training_dataset.prefetch(1)
-        training_dataset = training_dataset.repeat()
         training_dataset = training_dataset.batch(FLAGS.batch_size)
+        
         #Create the validation set
         validation_dataset = data.make_tf_dataset(validation_images.shape, validation_labels.shape)
         validation_dataset = validation_dataset.map(_normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)

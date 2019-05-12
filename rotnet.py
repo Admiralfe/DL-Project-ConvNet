@@ -128,10 +128,12 @@ def rotnet(x_batch):
     
     with tf.variable_scope("MLP_3"):
         output = MLPBlock(output, conv1_shape=[3, 3, 192, 192], l2_channels=192, out_channels=192)
-        output = tf.nn.avg_pool(output, 
+        output = tf.reduce_mean(output, [1, 2])
+        """output = tf.nn.avg_pool(output, 
                                 ksize=[1,output.shape[1], output.shape[2], 1], 
                                 strides=[1, output.shape[1], output.shape[2], 1],
                                 padding="VALID")
+        """
         tf.summary.histogram("pool_out", output)
         
     with tf.variable_scope("Linear_layer"):

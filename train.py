@@ -11,7 +11,7 @@ import data
 
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_integer("training_steps", 2000,
+tf.app.flags.DEFINE_integer("training_steps", 10000,
                             """Number of steps to run training for""")
 
 #Global training constants
@@ -60,9 +60,13 @@ def pre_process_data(dataset):
     #Normalize the images to have zero mean and unit stddev. 
     #Leaves the labels as they are.
     dataset = dataset.map(_normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    padding = tf.constant([[4, 4], [4, 4], [0, 0]])
+    
+    #Zero pad with 4 on each border for cropping later.
+    dataset = dataset.map(lambda x, y: (tf.pad(x, padding), y))
+    dataset = dataset.map(_random_crop, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     #Apply random crops and left right flips to the images.
     dataset = dataset.map(_random_left_right, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    dataset = dataset.map(_random_crop, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     
     return dataset
 
@@ -149,8 +153,8 @@ def train():
                 
                 sess.run(train_op, feed_dict={handle : train_handle, is_training : True})
 
-                if (i % 200 == 0):
-                    summary = sess.run(tf.summary.merge_all(), feed_dict={handle : train_handle, is_training : False})
+                if (i % 500 == 0 or i == FLAGS.training_steps - 1):
+                    summary = sess.run(tf.summary.merge_all(), feed_dict={handle : train_handle, is_training : True})
                     summary_writer.add_summary(summary, tf.train.global_step(sess, global_step))
                     
                     val_loss = 0

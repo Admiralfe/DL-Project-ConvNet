@@ -12,12 +12,15 @@ import data
 
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_integer("training_steps", 10000,
+tf.app.flags.DEFINE_integer("training_steps", 1000,
                             """Number of steps to run training for""")
+tf.app.flags.DEFINE_string("checkpoint_path", "tmp/checkpoints",
+                           """Directory to save model variables to after training""")
 
 #Global training constants
 NUM_EPOCHS = 1
 VALIDATION_BATCH_SIZE = 25
+LOG_INTERVAL = 500
 
 def _log_scalar(value, tag, step, summary_writer):
     """ Helper function to log a scalar value for visualization in tensorboard
@@ -71,61 +74,85 @@ def pre_process_data(dataset):
     
     return dataset
     
-def eval(ckpt_dir):
+def eval(checkpoint_dir):
+    """ Evaluates the test accuracy of the model
+        Args:
+            checkpoint_dir - directory where the model to be evaluated is stored
+    """
+    with tf.Graph().as_default():
+        test_images, test_labels = data.load_cifar_test_data()
+        
+        test_dataset = data.make_tf_dataset(test_images.shape, test_labels.shape)
+        test_dataset = test_dataset.map(_normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        test_dataset = test_dataset.prefetch(1)
+        test_dataset = test_dataset.map(data.create_rotated_images_with_labels, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        test_dataset = test_dataset.flat_map(lambda x, y: tf.data.Dataset.from_tensor_slices((x, y)))
+        test_dataset = test_dataset.batch(VALIDATION_BATCH_SIZE)
+        
+        test_iterator = test_dataset.make_initializable_iterator()
+        iter_input_images = tf.get_collection("iterator_inputs")[0]
+        iter_input_labels = tf.get_collection("iterator_inputs")[1]
+        
+        images, labels = test_iterator.get_next()
+        
+        logits = rotnet.rotnet(images)
+        loss = rotnet.loss(logits, labels)
+        
+        batches_per_epoch = math.ceil(len(test_labels) / VALIDATION_BATCH_SIZE)
+        
+        #Get the accuracy node, so we can compute the test accuracy.
+        accuracy = tf.get_default_graph().get_tensor_by_name("accuracy:0")
+        #Flag needed to say if batch normalization is for inference or training.
+        is_training = tf.get_default_graph().get_tensor_by_name("training_flag:0")
+
+        saver = tf.train.Saver()
+        
+        with tf.Session() as sess:
+            sess.run(test_iterator.initializer, 
+                     feed_dict={iter_input_images : test_images, 
+                                iter_input_labels : test_labels})
+            saver.restore(sess, checkpoint_dir)
+            test_accuracy = 0;
+            for _ in range(batches_per_epoch):
+                test_accuracy += sess.run(accuracy, feed_dict={is_training : False}) / batches_per_epoch
+        
+        print("The final test accuracy was: ", test_accuracy)
+            
+def create_rotation_dataset(dataset):
+    #Creates a new dataset containing tensors with all four rotated images as one single 4-D tensor
+    dataset = dataset.map(data.create_rotated_images_with_labels, 
+                                  num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    #Make the dataset into sets of 3-D tensors again, where each tensor is just one copy of rotated images.
+    dataset = dataset.flat_map(lambda x, y: tf.data.Dataset.from_tensor_slices((x, y)))
     
+    return dataset
     
 
 def train():
+    """ Runs the training, logs progress in TensorBoard in certain intervals specified by LOG_INTERVAL
+        Also saves the model to disk when training has finished.
+    """
     with tf.Graph().as_default():
         global_step = tf.train.get_or_create_global_step()
         
         training_images, training_labels = data.load_cifar_training_data()
         validation_images, validation_labels = data.load_cifar_validation_data()
         
-        """
-        def add_random(x):
-            random.seed()
-            print(type(x))
-            return x + random.randint(1,100)
-        
-        with tf.Session() as sess:
-            
-            summary_writer = tf.summary.FileWriter("tmp/7")
-            test = tf.data.Dataset.from_tensor_slices((validation_images, validation_labels))
-            test = pre_process_data(test)
-            test = test.map(data.create_rotated_images_with_labels, num_parallel_calls=4)
-            test = test.repeat(2)
-            
-            iter = test.make_one_shot_iterator()
-            image, label = iter.get_next()
-            for i in range(10000):
-                print(i)
-                if (i % 5000 == 1):
-                    s = sess.run(tf.summary.image("image", image, 4))
-                    summary_writer.add_summary(s)
-                else:
-                    sess.run(image)
-        exit()
-        """
         training_dataset = data.make_tf_dataset(training_images.shape, training_labels.shape)
 
         #Normalize and apply random crop and horizontal flips to the images.
         training_dataset = pre_process_data(training_dataset)
         
         training_dataset = training_dataset.shuffle(buffer_size=1000)
-        training_dataset = training_dataset.prefetch(1)
-        training_dataset = training_dataset.repeat()
+        training_dataset = training_dataset.prefetch(1).repeat()
         #Create the rotated data
-        training_dataset = training_dataset.map(data.create_rotated_images_with_labels, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-        #Undo the batching of data done to create the rotated versions of the images
-        training_dataset = training_dataset.flat_map(lambda x, y: tf.data.Dataset.from_tensor_slices((x, y)))
+        training_dataset = create_rotation_dataset(training_dataset)
         training_dataset = training_dataset.batch(FLAGS.batch_size)
         
         #Create the validation set
         validation_dataset = data.make_tf_dataset(validation_images.shape, validation_labels.shape)
         validation_dataset = validation_dataset.map(_normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-        validation_dataset = validation_dataset.map(data.create_rotated_images_with_labels, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-        validation_dataset = validation_dataset.flat_map(lambda x, y: tf.data.Dataset.from_tensor_slices((x, y)))
+        validation_dataset = create_rotation_dataset(validation_dataset)
         
         #Batch the validation data so we can run through it more quickly.
         validation_dataset = validation_dataset.repeat().prefetch(1).batch(VALIDATION_BATCH_SIZE)
@@ -160,7 +187,9 @@ def train():
         #(This is needed to perform batch normalization correctly)
         is_training = tf.get_default_graph().get_tensor_by_name("training_flag:0")
         #Create a file writer to log progress
-        summary_writer = tf.summary.FileWriter("tmp/6")
+        summary_writer = tf.summary.FileWriter("tmp/tmp")
+        #Creates a saver that can save the model state.
+        saver = tf.train.Saver()
         
         with tf.Session() as sess:
             #Initialize global variables and iterators
@@ -184,7 +213,7 @@ def train():
                 
                 sess.run(train_op, feed_dict={handle : train_handle, is_training : True})
 
-                if (i % 500 == 0 or i == FLAGS.training_steps - 1):
+                if (i % LOG_INTERVAL == 0 or i == FLAGS.training_steps - 1):
                     summary = sess.run(tf.summary.merge_all(), feed_dict={handle : train_handle, is_training : True})
                     summary_writer.add_summary(summary, tf.train.global_step(sess, global_step))
                     
@@ -200,6 +229,10 @@ def train():
                     #Log the values for viewing in tensorboard later.
                     _log_scalar(val_loss, "validation loss", i, summary_writer)
                     _log_scalar(val_acc, "validation accuracy", i, summary_writer)
-                                        
+                
+                #Save the model variables to use for evaluation / training another model.
+                if (i == FLAGS.training_steps - 1):
+                    saver.save(sess, FLAGS.checkpoint_path + "/checkpoint.ckpt")
 if __name__ == "__main__":          
-    train()
+    #train()
+    eval(FLAGS.checkpoint_path + "/checkpoint.ckpt")

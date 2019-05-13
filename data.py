@@ -80,7 +80,7 @@ def load_cifar_test_data():
     array_shape = [test_data.shape[0], 32, 32, 3]
     reshaped_test_data = np.empty(array_shape, dtype)
     
-    for i in range(val_data.shape[0]):
+    for i in range(test_data.shape[0]):
         reshaped_test_data[i] = np.reshape(test_data[i], (3, 32, 32)).transpose([1, 2, 0])
     return reshaped_test_data, test_labels
     

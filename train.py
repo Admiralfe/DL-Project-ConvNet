@@ -70,6 +70,10 @@ def pre_process_data(dataset):
     dataset = dataset.map(_random_left_right, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     
     return dataset
+    
+def eval(ckpt_dir):
+    
+    
 
 def train():
     with tf.Graph().as_default():

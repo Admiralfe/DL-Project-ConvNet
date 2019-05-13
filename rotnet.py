@@ -21,7 +21,7 @@ NUM_CLASSES = 4
 NUM_TRAINING_SAMPLES = 160000
 
 #Training constants
-WEIGHT_DECAY = 0.00005
+WEIGHT_DECAY = 0.0005
 DECAY_STEPS = 9000
 INITIAL_LR = 0.1
 DECAY_RATE = 0.2
@@ -46,7 +46,7 @@ def _create_variable(name, shape, stddev, wd):
         shape, 
         initializer=tf.random_normal_initializer(0, tf.cast(stddev, dtype), dtype=dtype),
         dtype=dtype)
-    weight_decay = tf.multiply(tf.nn.l2_loss(var), 2 *  wd, name="weight_loss")
+    weight_decay = tf.multiply(tf.nn.l2_loss(var), tf.cast(tf.constant(wd), dtype), name="weight_loss")
     tf.add_to_collection("losses", weight_decay)
     return var
 
@@ -144,15 +144,13 @@ def rotnet(x_batch):
                                                                        tf.cast(tf.constant(math.sqrt(1 / 192)), dtype)),
                              dtype=dtype)
         tf.summary.histogram("W", W)
-        weight_decay_W = tf.multiply(tf.nn.l2_loss(W), 2 *  WEIGHT_DECAY, name="weight_loss")
+        weight_decay_W = tf.multiply(tf.nn.l2_loss(W), tf.cast(tf.constant(WEIGHT_DECAY), dtype), name="weight_loss")
         tf.add_to_collection("losses", weight_decay_W)
         b = tf.get_variable("b",
                             shape=[NUM_CLASSES],
                             initializer=tf.constant_initializer(0),
                             dtype=dtype)
         tf.summary.histogram("b", b)
-        weight_decay_b = tf.multiply(tf.nn.l2_loss(b), 2 *  WEIGHT_DECAY, name="weight_loss")
-        tf.add_to_collection("losses", weight_decay_b)
         logits = tf.nn.xw_plus_b(flattened, W, b)
         tf.summary.histogram("linear_layer", logits)
 
@@ -196,7 +194,8 @@ def train_op(total_loss, global_step):
             global_step - global_step in the training
     """
     loss_avg = tf.train.ExponentialMovingAverage(0.9)
-    loss_avg_op = loss_avg.apply([total_loss])
+    with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+        loss_avg_op = loss_avg.apply([total_loss])
     tf.summary.scalar("total_loss", loss_avg.average(total_loss))
     
     #TODO: implement the correct dropping of learning rates.

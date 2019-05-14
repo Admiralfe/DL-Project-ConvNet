@@ -154,6 +154,42 @@ def data_pipeline(dataset, batch_size=None):
     iterator = dataset.make_initializable_iterator()
     return iterator
 
+def pre_process_data(dataset):
+    """ Applies some pre processing to the dataset
+        Namely, normalizes the images and applies randomly crops and left right flips
+        to the images.
+        
+        Args:
+            dataset - dataset to pre-process
+        
+        Returns:
+            The processed dataset
+    """
+    #Helpers to make map() act only on the images and not the labels in the dataset
+    def _random_left_right(x, y):
+        return tf.image.random_flip_left_right(x), y
+    def _random_crop(x, y):
+        return tf.random_crop(x, size=[FLAGS.image_size, FLAGS.image_size, 3]), y
+
+    #Normalize the images to have zero mean and unit stddev. 
+    #Leaves the labels as they are.
+    dataset = dataset.map(data.normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    padding = tf.constant([[4, 4], [4, 4], [0, 0]])
+    
+    #Zero pad with 4 on each border for cropping later.
+    dataset = dataset.map(lambda x, y: (tf.pad(x, padding), y))
+    dataset = dataset.map(_random_crop, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    #Apply random crops and left right flips to the images.
+    dataset = dataset.map(_random_left_right, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    
+    return dataset
+
+def normalize(img, label):
+    """ Helper function to be used with tf.data.Dataset.map() for normalizing images
+    """
+    dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
+    return tf.cast(tf.image.per_image_standardization(img), dtype), label
+
 """Code below this point is not currently used but is kept for legacy reasons."""
     
 """

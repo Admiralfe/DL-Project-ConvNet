@@ -36,43 +36,6 @@ def _log_scalar(value, tag, step, summary_writer):
     summary_writer.add_summary(summary, step)
     
     return
-
-
-def _normalize(img, label):
-    """ Helper function to be used with tf.data.Dataset.map() for normalizing images
-    """
-    dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
-    return tf.cast(tf.image.per_image_standardization(img), dtype), label
-
-def pre_process_data(dataset):
-    """ Applies some pre processing to the dataset
-        Namely, normalizes the images and applies randomly crops and left right flips
-        to the images.
-        
-        Args:
-            dataset - dataset to pre-process
-        
-        Returns:
-            The processed dataset
-    """
-    #Helpers to make map() act only on the images and not the labels in the dataset
-    def _random_left_right(x, y):
-        return tf.image.random_flip_left_right(x), y
-    def _random_crop(x, y):
-        return tf.random_crop(x, size=[FLAGS.image_size, FLAGS.image_size, 3]), y
-
-    #Normalize the images to have zero mean and unit stddev. 
-    #Leaves the labels as they are.
-    dataset = dataset.map(_normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    padding = tf.constant([[4, 4], [4, 4], [0, 0]])
-    
-    #Zero pad with 4 on each border for cropping later.
-    dataset = dataset.map(lambda x, y: (tf.pad(x, padding), y))
-    dataset = dataset.map(_random_crop, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    #Apply random crops and left right flips to the images.
-    dataset = dataset.map(_random_left_right, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    
-    return dataset
     
 def eval(checkpoint_dir):
     """ Evaluates the test accuracy of the model
@@ -83,7 +46,7 @@ def eval(checkpoint_dir):
         test_images, test_labels = data.load_cifar_test_data()
         
         test_dataset = data.make_tf_dataset(test_images.shape, test_labels.shape)
-        test_dataset = test_dataset.map(_normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        test_dataset = test_dataset.map(data.normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         test_dataset = test_dataset.prefetch(1)
         test_dataset = test_dataset.map(data.create_rotated_images_with_labels, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         test_dataset = test_dataset.flat_map(lambda x, y: tf.data.Dataset.from_tensor_slices((x, y)))
@@ -93,7 +56,7 @@ def eval(checkpoint_dir):
         iter_input_images = tf.get_collection("iterator_inputs")[0]
         iter_input_labels = tf.get_collection("iterator_inputs")[1]
         
-        images, labels = test_iterator.get_next()
+        images, labels = test_iterator.get_next()   
         
         logits = rotnet.rotnet(images)
         loss = rotnet.loss(logits, labels)
@@ -141,7 +104,7 @@ def train():
         training_dataset = data.make_tf_dataset(training_images.shape, training_labels.shape)
 
         #Normalize and apply random crop and horizontal flips to the images.
-        training_dataset = pre_process_data(training_dataset)
+        training_dataset = data.pre_process_data(training_dataset)
         
         training_dataset = training_dataset.shuffle(buffer_size=1000)
         training_dataset = training_dataset.prefetch(1).repeat()
@@ -151,7 +114,7 @@ def train():
         
         #Create the validation set
         validation_dataset = data.make_tf_dataset(validation_images.shape, validation_labels.shape)
-        validation_dataset = validation_dataset.map(_normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        validation_dataset = validation_dataset.map(data.normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         validation_dataset = create_rotation_dataset(validation_dataset)
         
         #Batch the validation data so we can run through it more quickly.
@@ -166,8 +129,8 @@ def train():
         iter_input_images_val = tf.get_collection("iterator_inputs")[2]
         iter_input_labels_val = tf.get_collection("iterator_inputs")[3]
         
-        handle = tf.placeholder(tf.string, shape=[])
-        iterator = tf.data.Iterator.from_string_handle(handle, 
+        handle = tf.placeholder(tf.string, name="iterator handle", shape=[])
+        iterator = tf.data.Iterator.from_string_handle(handle,
                                                        validation_dataset.output_types, 
                                                        validation_dataset.output_shapes)
         

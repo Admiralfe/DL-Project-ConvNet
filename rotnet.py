@@ -8,6 +8,9 @@ FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_integer("batch_size", 128,
                             """Batch size to use for training""")
+                            
+tf.app.flags.DEFINE_integer("batch_size_final", 128,
+                            """Batch size to use when training the final classifier""")
 
 tf.app.flags.DEFINE_boolean("use_fp16", True,
                             """Use 16 bit floating point""")
@@ -216,51 +219,39 @@ def train_op(total_loss, global_step):
     return grad_opt
 
 def make_final_classifier(checkpoint_dir):
-    saver = tf.train.Saver()
+    dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
     
-    new_graph = tf.Graph()
-    old_graph = tf.Graph()
-    
-    rotnet_saver = tf.train.import_meta_graph(checkpoint_dir)
+    rotnet_saver = tf.train.import_meta_graph(checkpoint_dir + "/test.meta")
     rotnet_graph = tf.get_default_graph()
-    with new_graph.as_default():
-        training_images, training_labels = data.load_training_data()
-        training_pipeline = tf.data.Dataset.from_tensor_slices((training_images, training_labels))
-        
-        training_pipeline = training_pipeline.map(data.normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-        training_pipeline = training_pipeline.prefetch(1).shuffle(1000).repeat().batch(FLAGS.batch_size)
-        
-        #Define the new graph using the old graphs output from the 2nd MLP block
-        #And by feeding a new iterator handle to the input pipeline correspodning to the labelled images
-        training_iterator = training_pipeline.make_one_shot_iterator()
-        training_iterator_handle = training_iterator.string_handle()
-        pretrained_graph_input_handle = old_graph.get_tensor_by_name("iterator handle:0")
-        pretrained_output = rotnet_graph.get_tensor_by_name("MLP_2/output:0")
-        
-        with tf.variable_scope("MLP_3_classifier"):
-            #Freeze the old gradients so that the pretrained features extractors remain constant
-            output = tf.stop_gradient(pretrained_output)
-            output = MLPBlock(pretrained_output, conv1_shape=[3, 3, 192, 192], l2_channels=192, out_channels=192)
-            output = tf.reduce_mean(output, axis=[1,2])
-            flattened = tf.reshape(output, (-1, 192))
-            W = tf.get_variable("W", 
-                             shape=[192, NUM_CLASSES_ROTATION],
-                             initializer=tf.random_uniform_initializer(tf.cast(tf.constant(-1 * math.sqrt(1 / 192)), dtype), 
-                                                                       tf.cast(tf.constant(math.sqrt(1 / 192)), dtype)),
-                             dtype=dtype)
-            tf.summary.histogram("W", W)
-            weight_decay_W = tf.multiply(tf.nn.l2_loss(W), tf.cast(tf.constant(WEIGHT_DECAY), dtype), name="weight_loss")
-            tf.add_to_collection("losses", weight_decay_W)
-            b = tf.get_variable("b",
-                                shape=[NUM_CLASSES_ROTATION],
-                                initializer=tf.constant_initializer(0),
-                                dtype=dtype)
-            tf.summary.histogram("b", b)
-            logits = tf.nn.xw_plus_b(flattened, W, b)
-            tf.summary.histogram("Logits", logits)
+    
+    pretrained_output = rotnet_graph.get_tensor_by_name("MLP_2/output:0")
+    #Flag for whether the model is currently used for training or inference
+    #This is needed to perform the batch normalization correctly.
+    training = tf.placeholder(tf.bool, name="training_flag")
+    
+    with tf.variable_scope("MLP_3_classifier"):
+        #Freeze the old gradients so that the pretrained features remain constant
+        output = tf.stop_gradient(pretrained_output)
+        output = MLPBlock(output, conv1_shape=[3, 3, 192, 192], l2_channels=192, out_channels=192)
+        output = tf.reduce_mean(output, axis=[1,2])
+        flattened = tf.reshape(output, (-1, 192))
+        W = tf.get_variable("W", 
+                         shape=[192, NUM_CLASSES_CIFAR],
+                         initializer=tf.random_uniform_initializer(tf.cast(tf.constant(-1 * math.sqrt(1 / 192)), dtype), 
+                                                                   tf.cast(tf.constant(math.sqrt(1 / 192)), dtype)),
+                         dtype=dtype)
+        tf.summary.histogram("W", W)
+        weight_decay_W = tf.multiply(tf.nn.l2_loss(W), tf.cast(tf.constant(WEIGHT_DECAY), dtype), name="weight_loss")
+        tf.add_to_collection("cifar_10_losses", weight_decay_W)
+        b = tf.get_variable("b",
+                            shape=[NUM_CLASSES_CIFAR],
+                            initializer=tf.constant_initializer(0),
+                            dtype=dtype)
+        tf.summary.histogram("b", b)
+        logits = tf.nn.xw_plus_b(flattened, W, b)
+        tf.summary.histogram("Logits", logits)
             
     return logits
-
 if __name__ == "__main__":
     make_final_classifier()
     

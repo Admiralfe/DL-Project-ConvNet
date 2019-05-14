@@ -121,12 +121,13 @@ def create_rotated_images_with_labels(image, curr_labels):
                tf.image.rot90(image, k=3)]
     return tf.stack(rotated), tf.range(4, dtype=tf.int32)
 
-def keep_k(images, labels, k):
+def keep_k(images, labels, num_labels, k):
     """ Get the first k images for each label in the same order as they are provided.
     
         Args:
             images - A numpy array of images
-            labels - A numpy array of labels 0-3
+            labels - A numpy array of labels in range 0 - num_labels
+            num_labels - number of labels
             k      - An int > 0 of how many images to return per label
         Returns:
             images_k - The chosen images. len(images_k) <= k
@@ -135,14 +136,14 @@ def keep_k(images, labels, k):
     assert k >= 0
 
     chosen_indexes = labels == -1
-    for label in range(4):
+    for label in range(num_labels):
         condition = labels == label
         chosen_indexes |= condition & (np.cumsum(condition) <= k)
-
-    images_k = np.compress(chosen_indexes, images)
-    labels_k = np.compress(chosen_indexes, labels)
-
-    assert len(images_k) == k * 4
+        
+    images_k = np.compress(chosen_indexes, images, axis=0)
+    labels_k = np.compress(chosen_indexes, labels, axis=0)
+    
+    assert len(images_k) == k * num_labels
     return images_k, labels_k
 
 def data_pipeline(dataset, batch_size=None):
@@ -160,7 +161,6 @@ def data_pipeline(dataset, batch_size=None):
             
     """
     bs = FLAGS.batch_size if batch_size is None else batch_size
-    print(bs)
     
     #Shuffles the data in blocks of 4 so that 
     #rotated versions of the same image stay next to each other in the data set
@@ -189,15 +189,17 @@ def pre_process_data(dataset):
         Returns:
             The processed dataset
     """
+    
+    print(dataset.output_shapes)
     #Helpers to make map() act only on the images and not the labels in the dataset
     def _random_left_right(x, y):
         return tf.image.random_flip_left_right(x), y
     def _random_crop(x, y):
         return tf.random_crop(x, size=[FLAGS.image_size, FLAGS.image_size, 3]), y
-
+    
     #Normalize the images to have zero mean and unit stddev. 
     #Leaves the labels as they are.
-    dataset = dataset.map(data.normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    dataset = dataset.map(normalize, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     padding = tf.constant([[4, 4], [4, 4], [0, 0]])
     
     #Zero pad with 4 on each border for cropping later.

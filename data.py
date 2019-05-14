@@ -121,6 +121,30 @@ def create_rotated_images_with_labels(image, curr_labels):
                tf.image.rot90(image, k=3)]
     return tf.stack(rotated), tf.range(4, dtype=tf.int32)
 
+def keep_k(images, labels, k):
+    """ Get the first k images for each label in the same order as they are provided.
+    
+        Args:
+            images - A numpy array of images
+            labels - A numpy array of labels 0-3
+            k      - An int > 0 of how many images to return per label
+        Returns:
+            images_k - The chosen images. len(images_k) <= k
+            labels_k - The corresponding labels. len(labels_k) == len(images_k)
+    """
+    assert k >= 0
+
+    chosen_indexes = labels == -1
+    for label in range(4):
+        condition = labels == label
+        chosen_indexes |= condition & (np.cumsum(condition) <= k)
+
+    images_k = np.compress(chosen_indexes, images)
+    labels_k = np.compress(chosen_indexes, labels)
+
+    assert len(images_k) == k * 4
+    return images_k, labels_k
+
 def data_pipeline(dataset, batch_size=None):
     """ Makes a data pipeline for a certain number of epochs for training the model.
         !!!The iterator returned needs to be initialized manually with the input data!!!
@@ -299,6 +323,14 @@ def load_test_data():
 """
 if __name__ == "__main__":
     create_rotated_data()
+    #from random import randint
+    #imgs = np.array(range(100))
+    #labels = np.array([randint(0, 3) for x in range(len(imgs))])
+    #print(imgs)
+    #print(labels)
+    #img_k, labels_k = keep_k(imgs, labels, 3)
+    #print(img_k)
+    #print(labels_k)
 
 """
 

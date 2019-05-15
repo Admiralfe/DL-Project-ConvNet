@@ -25,8 +25,8 @@ NUM_CLASSES_CIFAR = 10
 NUM_TRAINING_SAMPLES = 160000
 
 #Training constants
-WEIGHT_DECAY = 0.0005
-DECAY_STEPS = 9000
+WEIGHT_DECAY = 0.001
+DECAY_STEPS = 3000
 INITIAL_LR = 0.1
 DECAY_RATE = 0.2
 MOMENTUM = 0.9
@@ -55,7 +55,7 @@ def _create_variable(name, shape, stddev, wd):
     return var
 
 
-def MLPBlock(input, conv1_shape, l2_channels, out_channels):
+def MLPBlock(input, conv1_shape, l2_channels, out_channels, renorm):
     """ Builds an MLPBlock of a neural network.
     Args:
         input - image data input to the block
@@ -75,7 +75,7 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels):
                           wd=WEIGHT_DECAY)
     tf.summary.histogram("Weight_1", W1)
     L1 = tf.nn.conv2d(input, W1, name="L1", strides=[1, 1, 1, 1], padding='SAME')
-    L1 = tf.layers.batch_normalization(L1, momentum=0.9, epsilon=0.00001, training=training_flag)
+    L1 = tf.layers.batch_normalization(L1, momentum=0.9, epsilon=0.00001, training=training_flag, renorm=renorm)
     L1 = tf.nn.relu(L1)
     tf.summary.histogram("block_1", L1)
         
@@ -85,7 +85,7 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels):
                           stddev=tf.constant(math.sqrt(2 / l2_channels)), 
                           wd=WEIGHT_DECAY)
     L2 = tf.nn.conv2d(L1, W2, strides=[1, 1, 1, 1], padding='SAME')
-    L2 = tf.layers.batch_normalization(L2, momentum=0.9, epsilon=0.00001, training=training_flag)
+    L2 = tf.layers.batch_normalization(L2, momentum=0.9, epsilon=0.00001, training=training_flag, renorm=renorm)
     L2 = tf.nn.relu(L2)
     tf.summary.histogram("block_2", L2)
 
@@ -94,7 +94,7 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels):
                           stddev=tf.constant(math.sqrt(2 / out_channels)), 
                           wd=WEIGHT_DECAY)
     L3 = tf.nn.conv2d(L2, W3, strides=[1, 1, 1, 1], padding='SAME')
-    L3 = tf.layers.batch_normalization(L3, momentum=0.9, epsilon=0.00001, training=training_flag)
+    L3 = tf.layers.batch_normalization(L3, momentum=0.9, epsilon=0.00001, training=training_flag, renorm=renorm)
     L3 = tf.nn.relu(L3)
     tf.summary.histogram("block_3", L3)
     """
@@ -221,7 +221,7 @@ def train_op(total_loss, global_step):
 def make_final_classifier(checkpoint_dir):
     dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
     
-    rotnet_saver = tf.train.import_meta_graph(checkpoint_dir + "/test.meta")
+    rotnet_saver = tf.train.import_meta_graph(checkpoint_dir + "/feature_model.meta")
     rotnet_graph = tf.get_default_graph()
     
     pretrained_output = rotnet_graph.get_tensor_by_name("MLP_2/output:0")
@@ -232,7 +232,7 @@ def make_final_classifier(checkpoint_dir):
     with tf.variable_scope("MLP_3_classifier"):
         #Freeze the old gradients so that the pretrained features remain constant
         output = tf.stop_gradient(pretrained_output)
-        output = MLPBlock(output, conv1_shape=[3, 3, 192, 192], l2_channels=192, out_channels=192)
+        output = MLPBlock(output, conv1_shape=[3, 3, 192, 192], l2_channels=192, out_channels=192, renorm=True)
         output = tf.reduce_mean(output, axis=[1,2])
         flattened = tf.reshape(output, (-1, 192))
         W = tf.get_variable("W", 

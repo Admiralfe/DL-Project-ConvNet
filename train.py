@@ -150,7 +150,7 @@ def train():
         #(This is needed to perform batch normalization correctly)
         is_training = tf.get_default_graph().get_tensor_by_name("training_flag:0")
         #Create a file writer to log progress
-        summary_writer = tf.summary.FileWriter("tmp/tmp")
+        summary_writer = tf.summary.FileWriter("tmp/features")
         #Creates a saver that can save the model state.
         saver = tf.train.Saver()
         
@@ -198,10 +198,11 @@ def train():
                     saver.save(sess, FLAGS.checkpoint_path + "/feature_model")
                     
 def train_from_features(checkpoint_dir, num_samples_to_keep):
-    summary_writer = tf.summary.FileWriter("tmp/new")
+    training_steps = 6000
+    summary_writer = tf.summary.FileWriter("tmp/classifier")
     
     print("load old graph...")
-    logits = rotnet.make_final_classifier(checkpoint_dir + "/feature_model")
+    logits = rotnet.make_final_classifier(checkpoint_dir)
     print("loading data...")
     training_images, training_labels = data.load_cifar_training_data()
     validation_images, validation_labels = data.load_cifar_validation_data()
@@ -242,7 +243,7 @@ def train_from_features(checkpoint_dir, num_samples_to_keep):
     
     with tf.variable_scope("Cifar_classification"):
         global_step = tf.train.get_or_create_global_step()
-        global_step = global_step.assign(0)
+        step_reset_op = global_step.assign(0)
         #Compute the new loss function
         labels = tf.cast(labels, tf.int32)
         sample_cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -262,16 +263,16 @@ def train_from_features(checkpoint_dir, num_samples_to_keep):
         
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
+        sess.run(step_reset_op)
         train_handle = sess.run(training_iterator.string_handle())
         validation_handle = sess.run(validation_iterator.string_handle())
         test_handle = sess.run(test_iterator.string_handle())
         
         summary_writer.add_graph(sess.graph)
         
-        for i in range(20000):
-            print("starting iteration " + str(i) + " of " + str(FLAGS.training_steps))
+        for i in range(training_steps):
+            print("starting iteration " + str(i) + " of " + str(training_steps))
             sess.run(train_op, feed_dict={pretrained_graph_input_handle : train_handle, is_training : True})
-            
             if (i % LOG_INTERVAL == 0 or i == FLAGS.training_steps - 1):
                 summary = sess.run(tf.summary.merge_all(), feed_dict={pretrained_graph_input_handle : train_handle, is_training : True})
                 summary_writer.add_summary(summary, i)
@@ -289,13 +290,13 @@ def train_from_features(checkpoint_dir, num_samples_to_keep):
                 _log_scalar(val_acc, "validation accuracy", i, summary_writer)
                         #Save the model variables to use for evaluation / training another model.
         
-        train_acc = 0
+        test_acc = 0
         #Training finishes here so we can run the evaluation
         for i in range(num_test_iters):
-            train_acc += sess.run(accuracy, feed_dict={pretrained_graph_input_handle : test_handle, is_training : False}) / num_test_iters
-    print("Final test accuracy: ", train_acc)
+            test_acc += sess.run(accuracy, feed_dict={pretrained_graph_input_handle : test_handle, is_training : False}) / num_test_iters
+    print("Final test accuracy: ", test_acc)
     return        
 if __name__ == "__main__":          
-    train()
+    #train()
     #eval(FLAGS.checkpoint_path + "/checkpoint.ckpt")
     train_from_features(FLAGS.checkpoint_path, 100)

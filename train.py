@@ -1,5 +1,6 @@
 import math
 import random
+import os
 
 import tensorflow as tf
 import numpy as np
@@ -12,7 +13,7 @@ import data
 
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_integer("training_steps", 35000,
+tf.app.flags.DEFINE_integer("training_steps", 30000,
                             """Number of steps to run training for""")
 tf.app.flags.DEFINE_string("checkpoint_path", "tmp/checkpoints",
                            """Directory to save model variables to after training""")
@@ -58,7 +59,7 @@ def eval(checkpoint_dir):
         
         images, labels = test_iterator.get_next()   
         
-        logits = rotnet.rotnet(images)
+        logits = rotnet.rotnet(images, num_blocks=4)
         loss = rotnet.loss(logits, labels)
         
         batches_per_epoch = math.ceil(len(test_labels) / VALIDATION_BATCH_SIZE)
@@ -139,7 +140,8 @@ def train():
         validation_iterator = validation_dataset.make_initializable_iterator()
         training_iterator = training_dataset.make_initializable_iterator()
         
-        logits = rotnet.rotnet(images)
+        #Build the graph
+        logits = rotnet.rotnet(images, num_blocks=4)
         loss = rotnet.loss(logits, labels)
         
         train_op = rotnet.train_op(loss, global_step)
@@ -150,6 +152,8 @@ def train():
         #(This is needed to perform batch normalization correctly)
         is_training = tf.get_default_graph().get_tensor_by_name("training_flag:0")
         #Create a file writer to log progress
+        if (os.path.isdir("tmp/features")):
+            raise RuntimeError("The log file to write to already exists")
         summary_writer = tf.summary.FileWriter("tmp/features")
         #Creates a saver that can save the model state.
         saver = tf.train.Saver()
@@ -199,6 +203,9 @@ def train():
                     
 def train_from_features(checkpoint_dir, num_samples_to_keep):
     training_steps = 6000
+    
+    if (os.path.isdir("tmp/classifier")):
+        raise RuntimeError("The log file to write to already exists")
     summary_writer = tf.summary.FileWriter("tmp/classifier")
     
     print("load old graph...")
@@ -295,8 +302,9 @@ def train_from_features(checkpoint_dir, num_samples_to_keep):
         for i in range(num_test_iters):
             test_acc += sess.run(accuracy, feed_dict={pretrained_graph_input_handle : test_handle, is_training : False}) / num_test_iters
     print("Final test accuracy: ", test_acc)
+    _log_scalar(test_acc, "Test accuracy", training_steps - 1, summary_writer)
     return        
 if __name__ == "__main__":          
     #train()
-    #eval(FLAGS.checkpoint_path + "/checkpoint.ckpt")
-    train_from_features(FLAGS.checkpoint_path, 100)
+    eval(FLAGS.checkpoint_path + "/feature_model")
+    #train_from_features(FLAGS.checkpoint_path, 100)

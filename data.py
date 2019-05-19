@@ -14,6 +14,11 @@ IMAGE_CHANNELS = 3;
     and the fifth is used as validation.
 """
 def load_cifar_data():
+    """ Loads all the cifar-10 data, using 45000 samples for training and 5000 for validation
+        
+        Returns:
+            Training, validation and test labels and images.
+    """
     data_path_root = "Datasets/cifar-10-batches-py/"
     train_batch_1 = np.load(data_path_root + "data_batch_1", encoding="latin1", allow_pickle=True)
     train_batch_2 = np.load(data_path_root + "data_batch_2", encoding="latin1", allow_pickle=True)
@@ -34,6 +39,12 @@ def load_cifar_data():
     return train_data, train_labels, val_data, val_labels, test_data, test_labels
 
 def load_cifar_training_data():
+    """ Loads only the training data of the cifar-10 dataset consisting of 45000 images.
+        The last 5000 images are left to be used as a validation set.
+        
+        Returns:
+            Numpy arrays with training images in 32x32x3 format and training labels.
+    """
     dtype = np.float16 if FLAGS.use_fp16 else np.float32
     
     data_path_root = "Datasets/cifar-10-batches-py/"
@@ -55,6 +66,11 @@ def load_cifar_training_data():
     return reshaped_train_data, train_labels
     
 def load_cifar_validation_data():
+    """ Loads the validation data of the cifar-10 dataset consisting of 5000 images.
+        
+        Returns:
+            Numpy arrays with validation images in 32x32x3 format and validation labels.
+    """
     dtype = np.float16 if FLAGS.use_fp16 else np.float32
     
     data_path_root = "Datasets/cifar-10-batches-py/"
@@ -70,6 +86,11 @@ def load_cifar_validation_data():
     return reshaped_val_data, val_labels
     
 def load_cifar_test_data():
+    """ Loads the test data of the cifar-10 dataset consisting of 10000 images.
+        
+        Returns:
+            Numpy arrays with test images in 32x32x3 format and test labels.
+    """
     dtype = np.float16 if FLAGS.use_fp16 else np.float32
     
     data_path_root = "Datasets/cifar-10-batches-py/"
@@ -179,8 +200,8 @@ def data_pipeline(dataset, batch_size=None):
     return iterator
 
 def pre_process_data(dataset):
-    """ Applies some pre processing to the dataset
-        Namely, normalizes the images and applies randomly crops and left right flips
+    """ Applies some pre processing to the dataset.
+        Namely, normalizes the images and randomly applies crops and left right flips
         to the images.
         
         Args:
@@ -216,131 +237,9 @@ def normalize(img, label):
     dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
     return tf.cast(tf.image.per_image_standardization(img), dtype), label
 
-"""Code below this point is not currently used but is kept for legacy reasons."""
-    
-"""
-Rotates an image 0, 90, 180 or 270 degrees counter-clockwise
-Image needs to be given as an N x N x 3 RGB-matrix.
-"""
-def rotate(image, degrees):
-    if degrees == 0:
-        return image
-    if degrees == 90:
-        #Transposing the image and flipping vertically same as rotating 90 degrees.
-        image = np.transpose(image, (1, 0, 2))
-        image = np.flipud(image)
-        return image
-    if degrees == 180:
-        #Flipping vertically and then horizontally same as rotating 180 degrees.
-        image = np.flipud(image)
-        image = np.fliplr(image)
-        return image
-    if degrees == 270:
-        #Flipping vertically and transposing same as 270 degrees
-        image = np.flipud(image)
-        image = np.transpose(image, (1, 0, 2))
-        return image
-    
-    print("Amount of rotation needs to be 0, 90, 180 or 270 degrees")
-    return
-
-""" Loads the default CIFAR-10 dataset and creates 0, 90, 180 and 270 degree rotations of every image ordered like
-        image_1_0, image_1_90, image_1_180, image_1_270, image_2_0, image_2_90 and so on.
-        It then saves the new image array to files in float16 if FLAGS.use_fp16 is true and float32 otherwise. The label file is ordered in the same way.
-"""
-def create_rotated_data():
-    _IMAGE_SIZE = 32
-    _NUM_CHANNELS = 3
-    dtype = np.float16 if FLAGS.use_fp16 else np.float32
-    train_data, train_labels, val_data, val_labels, test_data, test_labels = load_cifar_data()
-
-    # Create all rotations of the training data
-    training_shape = (train_data.shape[0] * 4, _IMAGE_SIZE, _IMAGE_SIZE, _NUM_CHANNELS)
-
-    training_data_rotated = np.empty(training_shape, dtype)
-    training_labels_rotated = np.empty(training_shape[0], np.int8)
-
-    for i in range(train_data.shape[0]):
-        for j in range(4):
-            reshaped_img = np.reshape(train_data[i], (3, 32, 32)).transpose([1, 2, 0])# / 255.0
-            training_data_rotated[i * 4 + j] = rotate(reshaped_img, j * 90)
-            training_labels_rotated[i * 4 + j] = np.int8(j)
-
-    np.save("training_data_rotated", training_data_rotated)
-    np.save("training_labels_rotated", training_labels_rotated)
-
-    # Create all rotations of the validation data
-    val_shape = (val_data.shape[0] * 4, _IMAGE_SIZE, _IMAGE_SIZE, _NUM_CHANNELS)
-
-    val_data_rotated = np.empty(val_shape, dtype)
-    val_labels_rotated = np.empty(val_shape[0], np.int8)
-
-    for i in range(val_data.shape[0]):
-        for j in range(4):
-            reshaped_img = np.reshape(val_data[i], (3, 32, 32)).transpose([1, 2, 0])# / 255.0
-            val_data_rotated[i * 4 + j] = rotate(reshaped_img, j * 90)
-            val_labels_rotated[i * 4 + j] = np.int8(j)
-
-    np.save("val_data_rotated", val_data_rotated)
-    np.save("val_labels_rotated", val_labels_rotated)
-
-    # Create all rotations of the test data
-    test_shape = (test_data.shape[0] * 4, _IMAGE_SIZE, _IMAGE_SIZE, _NUM_CHANNELS)
-
-    test_data_rotated = np.empty(test_shape, dtype)
-    test_labels_rotated = np.empty(test_shape[0], np.int8)
-
-    for i in range(test_data.shape[0]):
-        for j in range(4):
-            reshaped_img = np.reshape(test_data[i], (3, 32, 32)).transpose([1, 2, 0])# / 255.0
-            test_data_rotated[i * 4 + j] = rotate(reshaped_img, j * 90)
-            test_labels_rotated[i * 4 + j] = np.int8(j)
-
-    np.save("test_data_rotated", test_data_rotated)
-    np.save("test_labels_rotated", test_labels_rotated)
-    
-def load_training_data():
-    train_data = np.load("training_data_rotated.npy", encoding="latin1", allow_pickle=True)
-    train_labels = np.load("training_labels_rotated.npy", encoding="latin1", allow_pickle=True)
-    
-    tf.app.flags.DEFINE_integer("num_training_samples", len(train_labels),
-                                """Number of samples in the training set""")
-
-    return train_data, train_labels
-
-def load_validation_data():
-    val_data = np.load("val_data_rotated.npy", encoding="latin1", allow_pickle=True)
-    val_labels = np.load("val_labels_rotated.npy", encoding="latin1", allow_pickle=True)
-    
-    return val_data, val_labels
-
-def load_test_data():
-    test_data = np.load("test_data_rotated.npy", encoding="latin1", allow_pickle=True)
-    test_labels = np.load("test_labels_rotated.npy", encoding="latin1", allow_pickle=True)
-    
-    return test_data, test_labels
     
 """
     Test code for this file
 """
 if __name__ == "__main__":
     create_rotated_data()
-    #from random import randint
-    #imgs = np.array(range(100))
-    #labels = np.array([randint(0, 3) for x in range(len(imgs))])
-    #print(imgs)
-    #print(labels)
-    #img_k, labels_k = keep_k(imgs, labels, 3)
-    #print(img_k)
-    #print(labels_k)
-
-"""
-
-train_batch = np.load("Datasets/cifar-10-batches-py/data_batch_1", encoding="latin1")
-image_data = train_batch["data"]
-test_image = np.reshape(image_data[100], (3, 32, 32)).transpose([1, 2, 0])
-
-test_image = rotate(test_image, 270)
-plt.imshow(test_image, interpolation="nearest")
-plt.show()
-"""

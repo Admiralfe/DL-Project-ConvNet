@@ -51,7 +51,7 @@ def _create_variable(name, shape, stddev, wd):
         initializer=tf.random_normal_initializer(0, tf.cast(stddev, dtype), dtype=dtype),
         dtype=dtype)
     weight_decay = tf.multiply(tf.nn.l2_loss(var), tf.cast(tf.constant(wd), dtype), name="weight_loss")
-    tf.add_to_collection("losses", weight_decay)
+    tf.add_to_collection("cifar_10_losses", weight_decay)
     return var
 
 
@@ -75,7 +75,7 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels):
                           wd=WEIGHT_DECAY)
     tf.summary.histogram("Weight_1", W1)
     L1 = tf.nn.conv2d(input, W1, name="L1", strides=[1, 1, 1, 1], padding='SAME')
-    L1 = tf.layers.batch_normalization(L1, momentum=0.9, epsilon=0.00001, training=training_flag)
+    #L1 = tf.layers.batch_normalization(L1, momentum=0.9, epsilon=0.00001, training=training_flag)
     L1 = tf.nn.relu(L1)
     tf.summary.histogram("block_1", L1)
         
@@ -85,7 +85,7 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels):
                           stddev=tf.constant(math.sqrt(2 / l2_channels)), 
                           wd=WEIGHT_DECAY)
     L2 = tf.nn.conv2d(L1, W2, strides=[1, 1, 1, 1], padding='SAME')
-    L2 = tf.layers.batch_normalization(L2, momentum=0.9, epsilon=0.00001, training=training_flag)
+    #L2 = tf.layers.batch_normalization(L2, momentum=0.9, epsilon=0.00001, training=training_flag)
     L2 = tf.nn.relu(L2)
     tf.summary.histogram("block_2", L2)
 
@@ -94,7 +94,7 @@ def MLPBlock(input, conv1_shape, l2_channels, out_channels):
                           stddev=tf.constant(math.sqrt(2 / out_channels)), 
                           wd=WEIGHT_DECAY)
     L3 = tf.nn.conv2d(L2, W3, strides=[1, 1, 1, 1], padding='SAME')
-    L3 = tf.layers.batch_normalization(L3, momentum=0.9, epsilon=0.00001, training=training_flag)
+    #L3 = tf.layers.batch_normalization(L3, momentum=0.9, epsilon=0.00001, training=training_flag)
     L3 = tf.nn.relu(L3)
     tf.summary.histogram("block_3", L3)
     """
@@ -124,14 +124,18 @@ def rotnet(x_batch, num_blocks):
     with tf.variable_scope("MLP_1"):
         output = MLPBlock(x_batch, conv1_shape=[5, 5, 3, 192], l2_channels=160, out_channels=96)
         output = tf.nn.max_pool(output, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding="SAME")
+        output = tf.layers.dropout(output, rate=0.5, training=training)
+
         tf.summary.histogram("pool_out", output)
     
     with tf.variable_scope("MLP_2"):
         output = MLPBlock(output, conv1_shape=[5, 5, 96, 192], l2_channels=192, out_channels=192)
         output = tf.nn.avg_pool(output, name="output", ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding="SAME")
+        output = tf.layers.dropout(output, rate=0.5, training=training)
     
     with tf.variable_scope("MLP_3"):
         output = MLPBlock(output, conv1_shape=[3, 3, 192, 192], l2_channels=192, out_channels=192)
+        output = tf.layers.dropout(output, rate=0.5, training=training)
         if (not (num_blocks == 4)):
             output = tf.reduce_mean(output, axis=[1, 2])
         """output = tf.nn.avg_pool(output, 
@@ -143,7 +147,8 @@ def rotnet(x_batch, num_blocks):
     if (num_blocks == 4):
         with tf.variable_scope("MLP_4"):
             output = MLPBlock(output, conv1_shape=[3, 3, 192, 192], l2_channels=192, out_channels=192)
-            output = tf.reduce_mean(output, axis=[1, 2])       
+            output = tf.reduce_mean(output, axis=[1, 2])
+            
         
     with tf.variable_scope("Linear_layer"):
         flattened = tf.reshape(output, (-1, 192))
@@ -203,11 +208,12 @@ def train_op(total_loss, global_step):
             global_step - global_step in the training
     """
     loss_avg = tf.train.ExponentialMovingAverage(0.9)
+    
+    #Make sure that the batch normalization values are updated.
     with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
         loss_avg_op = loss_avg.apply([total_loss])
     tf.summary.scalar("total_loss", loss_avg.average(total_loss))
     
-    #TODO: implement the correct dropping of learning rates.
     batches_per_epoch = NUM_TRAINING_SAMPLES / FLAGS.batch_size
     lr = tf.train.exponential_decay(
             INITIAL_LR,
@@ -220,34 +226,40 @@ def train_op(total_loss, global_step):
     with tf.control_dependencies([loss_avg_op]):
         grad_opt = tf.train.MomentumOptimizer(lr, MOMENTUM, use_nesterov=NESTEROV).minimize(total_loss, global_step=global_step)
     
-    #POTENTIAL TODO: add more summaries for gradients etc.
     return grad_opt
 
 def make_final_classifier(checkpoint_dir):
+    """
+        Creates the final classifier by using pre-trained features from a model stored in checkpoint_dir.
+        
+        Args:
+            checkpoint_dir - directory with the pre-trained model
+        Returns:
+            logits for the final classifier.
+    """
     dtype = tf.float16 if FLAGS.use_fp16 else tf.float32
     
-    rotnet_saver = tf.train.import_meta_graph(checkpoint_dir + "/feature_model.meta")
+    rotnet_saver = tf.train.import_meta_graph(checkpoint_dir + "/feature_model_dropout.meta")
     rotnet_graph = tf.get_default_graph()
     
     pretrained_output = rotnet_graph.get_tensor_by_name("MLP_2/output:0")
+    
     #Flag for whether the model is currently used for training or inference
     #This is needed to perform the batch normalization correctly.
-    training = tf.placeholder(tf.bool, name="training_flag")
+    training = rotnet_graph.get_tensor_by_name("training_flag:0")
     
     with tf.variable_scope("MLP_3_classifier"):
         #Freeze the old gradients so that the pretrained features remain constant
         output = tf.stop_gradient(pretrained_output)
         output = MLPBlock(output, conv1_shape=[3, 3, 192, 192], l2_channels=192, out_channels=192)
+        output = tf.layers.dropout(output, rate=0.5, training=training)
         output = tf.reduce_mean(output, axis=[1,2])
         flattened = tf.reshape(output, (-1, 192))
-        W = tf.get_variable("W", 
-                         shape=[192, NUM_CLASSES_CIFAR],
-                         initializer=tf.random_uniform_initializer(tf.cast(tf.constant(-1 * math.sqrt(1 / 192)), dtype), 
-                                                                   tf.cast(tf.constant(math.sqrt(1 / 192)), dtype)),
-                         dtype=dtype)
+        W = _create_variable("W", 
+                             shape=[192, NUM_CLASSES_CIFAR],
+                             stddev=tf.constant(math.sqrt(2.0 / NUM_CLASSES_CIFAR)),
+                             wd=WEIGHT_DECAY)
         tf.summary.histogram("W", W)
-        weight_decay_W = tf.multiply(tf.nn.l2_loss(W), tf.cast(tf.constant(WEIGHT_DECAY), dtype), name="weight_loss")
-        tf.add_to_collection("cifar_10_losses", weight_decay_W)
         b = tf.get_variable("b",
                             shape=[NUM_CLASSES_CIFAR],
                             initializer=tf.constant_initializer(0),

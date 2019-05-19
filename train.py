@@ -39,7 +39,7 @@ def _log_scalar(value, tag, step, summary_writer):
     return
     
 def eval(checkpoint_dir):
-    """ Evaluates the test accuracy of the model
+    """ Evaluates the test accuracy of the model and prints it to standard output.
         Args:
             checkpoint_dir - directory where the model to be evaluated is stored
     """
@@ -99,6 +99,7 @@ def train():
     with tf.Graph().as_default():
         global_step = tf.train.get_or_create_global_step()
         
+        #Load the datasets
         training_images, training_labels = data.load_cifar_training_data()
         validation_images, validation_labels = data.load_cifar_validation_data()
         
@@ -148,13 +149,16 @@ def train():
         
         #Get the accuracy node in the graph to use for computing validation accuracy
         accuracy = tf.get_default_graph().get_tensor_by_name("accuracy:0")
+        
         #Get the flag for whether the model is currently used for training or inference. 
         #(This is needed to perform batch normalization correctly)
         is_training = tf.get_default_graph().get_tensor_by_name("training_flag:0")
+        
         #Create a file writer to log progress
-        if (os.path.isdir("tmp/features")):
+        if (os.path.isdir("tmp/features_dropout")):
             raise RuntimeError("The log file to write to already exists")
-        summary_writer = tf.summary.FileWriter("tmp/features")
+        summary_writer = tf.summary.FileWriter("tmp/features_dropout")
+        
         #Creates a saver that can save the model state.
         saver = tf.train.Saver()
         
@@ -199,14 +203,24 @@ def train():
                 
                 #Save the model variables to use for evaluation / training another model.
                 if (i == FLAGS.training_steps - 1):
-                    saver.save(sess, FLAGS.checkpoint_path + "/feature_model")
+                    saver.save(sess, FLAGS.checkpoint_path + "/feature_model_dropout")
                     
 def train_from_features(checkpoint_dir, num_samples_to_keep):
-    training_steps = 6000
+    """
+        Trains an object classifier using a pre-trained model as base. 
+        Also performs evaluation on the test set when training has finished
+        Logs the validation and training accuracies and losses in Tensorboard and
+        prints and logs the final testing accuracy.
+        
+        Args:
+            checkpoint_dir - directory where the pre-trained model is stored
+            num_samples_to_keep - number of samples PER CLASS to use for training the final classifier
+    """
+    training_steps = 20000
     
-    if (os.path.isdir("tmp/classifier")):
+    if (os.path.isdir("tmp/classifier_dropout")):
         raise RuntimeError("The log file to write to already exists")
-    summary_writer = tf.summary.FileWriter("tmp/classifier")
+    summary_writer = tf.summary.FileWriter("tmp/classifier_dropout")
     
     print("load old graph...")
     logits = rotnet.make_final_classifier(checkpoint_dir)
@@ -295,7 +309,6 @@ def train_from_features(checkpoint_dir, num_samples_to_keep):
                 #Log the values for viewing in tensorboard later.
                 _log_scalar(val_loss, "validation loss", i, summary_writer)
                 _log_scalar(val_acc, "validation accuracy", i, summary_writer)
-                        #Save the model variables to use for evaluation / training another model.
         
         test_acc = 0
         #Training finishes here so we can run the evaluation
@@ -304,7 +317,8 @@ def train_from_features(checkpoint_dir, num_samples_to_keep):
     print("Final test accuracy: ", test_acc)
     _log_scalar(test_acc, "Test accuracy", training_steps - 1, summary_writer)
     return        
-if __name__ == "__main__":          
+
+¨if __name__ == "__main__":          
     #train()
-    eval(FLAGS.checkpoint_path + "/feature_model")
-    #train_from_features(FLAGS.checkpoint_path, 100)
+    #eval(FLAGS.checkpoint_path + "/feature_model_dropout")
+    train_from_features(FLAGS.checkpoint_path, 100)
